@@ -49,7 +49,7 @@ class CareCoordinatorAgent(BaseAgent):
     async def handle(self, ctx: SessionContext) -> AgentResponse:
         now = datetime.now(timezone.utc)
         extraction = await self.llm.complete_json(
-            system=EXTRACTION_SYSTEM.format(now=now.isoformat()),
+            system=EXTRACTION_SYSTEM.replace("{now}", now.isoformat()),
             messages=[{"role": "user", "content": ctx.user_message}],
             schema_hint='{"tasks": [...], "query": str|null, "mark_done": [...]}',
         )
