@@ -132,9 +132,9 @@ export function ChatPage() {
                   <button
                     key={s}
                     onClick={() => send(s)}
-                    className="group rounded-xl border border-sand-200 bg-white p-3.5 text-left text-sm text-ink-800 shadow-soft transition-all hover:border-sage-300 hover:bg-sage-50/40 hover:shadow-lift"
+                    className="group rounded-xl border border-sand-200 bg-white p-3.5 text-left text-sm text-ink-800 shadow-soft transition-all duration-300 hover:-translate-y-0.5 hover:border-sage-300 hover:bg-sage-50/40 hover:shadow-lift active:translate-y-0 active:scale-[0.98]"
                   >
-                    <Sparkles className="mb-1.5 h-3.5 w-3.5 text-sage-600 group-hover:text-sage-700" />
+                    <Sparkles className="mb-1.5 h-3.5 w-3.5 text-sage-600 transition-transform duration-300 group-hover:scale-125 group-hover:text-sage-700" />
                     <div>{s}</div>
                   </button>
                 ))}
@@ -189,9 +189,13 @@ export function ChatPage() {
             <button
               onClick={() => send(input)}
               disabled={!input.trim() || loading}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sage-600 text-white shadow-soft transition-all hover:bg-sage-700 disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
+              className="group flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sage-600 text-white shadow-soft transition-all duration-200 ease-out hover:-translate-y-0.5 hover:bg-sage-700 hover:shadow-lift disabled:pointer-events-none disabled:opacity-40 active:translate-y-0 active:scale-90 active:duration-75"
             >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              {loading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+              )}
             </button>
           </div>
           <p className="mt-2 text-center text-xs text-ink-500">

@@ -18,21 +18,30 @@
 
 @layer components {
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-sage-600 px-4 py-2.5 text-sm font-medium text-white shadow-soft transition-all hover:bg-sage-700 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-400 focus-visible:ring-offset-2 focus-visible:ring-offset-sand-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-sage-600 px-4 py-2.5 text-sm font-medium text-white shadow-soft transition-all duration-200 ease-out hover:-translate-y-0.5 hover:bg-sage-700 hover:shadow-lift active:translate-y-0 active:scale-[0.97] active:duration-75 disabled:pointer-events-none disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-400 focus-visible:ring-offset-2 focus-visible:ring-offset-sand-50;
   }
   .btn-ghost {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-ink-700 transition-colors hover:bg-sand-100;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-ink-700 transition-all duration-200 ease-out hover:bg-sand-100 hover:text-ink-900 active:scale-[0.97] active:duration-75;
   }
   .btn-clay {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-clay-400 px-4 py-2.5 text-sm font-medium text-white shadow-soft transition-all hover:bg-clay-500 active:scale-[0.98];
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-clay-400 px-4 py-2.5 text-sm font-medium text-white shadow-soft transition-all duration-200 ease-out hover:-translate-y-0.5 hover:bg-clay-500 hover:shadow-lift active:translate-y-0 active:scale-[0.97] active:duration-75;
   }
   .input-field {
-    @apply w-full rounded-lg border border-sand-200 bg-white px-3.5 py-2.5 text-ink-900 placeholder-ink-500 shadow-soft transition-colors focus:border-sage-300 focus:outline-none focus:ring-2 focus:ring-sage-200;
+    @apply w-full rounded-lg border border-sand-200 bg-white px-3.5 py-2.5 text-ink-900 placeholder-ink-500 shadow-soft transition-all duration-200 focus:border-sage-300 focus:outline-none focus:ring-2 focus:ring-sage-200;
   }
   .card {
-    @apply rounded-2xl border border-sand-200 bg-white p-6 shadow-soft;
+    @apply rounded-2xl border border-sand-200 bg-white p-6 shadow-soft transition-all duration-300;
   }
   .scroll-fade {
     mask-image: linear-gradient(to bottom, transparent 0px, black 24px, black calc(100% - 24px), transparent 100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

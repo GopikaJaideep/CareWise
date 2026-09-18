@@ -10,6 +10,7 @@ import {
 import { api, type DashboardSummary } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { disablePushReminders, enablePushReminders, pushPermission } from "../lib/push";
+import { AnimatedNumber } from "../components/AnimatedNumber";
 
 export function DashboardPage() {
   const { user } = useAuth();
@@ -104,9 +105,9 @@ export function DashboardPage() {
               </div>
             </div>
             {summary.latest_burnout_score !== null ? (
-              <div className="text-right">
-                <div className={`font-serif text-3xl font-semibold ${burnoutColor}`}>
-                  {Math.round(summary.latest_burnout_score)}
+              <div className="animate-count-up text-right">
+                <div className={`font-serif text-3xl font-semibold tabular-nums ${burnoutColor}`}>
+                  <AnimatedNumber value={Math.round(summary.latest_burnout_score)} />
                 </div>
                 <div className="text-xs text-ink-600">/ 100 — {summary.burnout_category}</div>
               </div>
@@ -280,15 +281,17 @@ function StatCard({
   return (
     <Link
       to={href}
-      className="card group transition-all hover:border-sage-300 hover:shadow-lift"
+      className="card group transition-all duration-300 hover:-translate-y-1 hover:border-sage-300 hover:shadow-lift"
     >
       <div className="flex items-start justify-between">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sage-50 text-sage-600 transition-colors group-hover:bg-sage-100">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sage-50 text-sage-600 transition-all duration-300 group-hover:scale-110 group-hover:bg-sage-100">
           <Icon className="h-4 w-4" />
         </div>
-        <ArrowRight className="h-4 w-4 text-ink-500 opacity-0 transition-opacity group-hover:opacity-100" />
+        <ArrowRight className="h-4 w-4 -translate-x-1 text-ink-500 opacity-0 transition-all duration-300 group-hover:translate-x-0 group-hover:opacity-100" />
       </div>
-      <div className="mt-3 font-serif text-3xl font-semibold text-ink-900">{value}</div>
+      <div className="mt-3 font-serif text-3xl font-semibold tabular-nums text-ink-900">
+        {typeof value === "number" ? <AnimatedNumber value={value} /> : value}
+      </div>
       <div className="mt-0.5 text-sm text-ink-700">{label}</div>
       <div className="mt-1 text-xs text-ink-500">{sublabel}</div>
     </Link>

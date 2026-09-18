@@ -100,7 +100,7 @@ export function SymptomsPage() {
               {symptoms.slice(0, 20).map((s) => (
                 <div
                   key={s.id}
-                  className="flex items-center justify-between rounded-xl border border-sand-200 bg-white p-3.5 shadow-soft"
+                  className="flex animate-pop-in items-center justify-between rounded-xl border border-sand-200 bg-white p-3.5 shadow-soft transition-all duration-300 hover:border-sage-200 hover:shadow-lift"
                 >
                   <div>
                     <div className="font-medium text-ink-900 capitalize">{s.symptom}</div>
@@ -146,7 +146,7 @@ export function SymptomsPage() {
               {meds.map((m) => (
                 <div
                   key={m.id}
-                  className="group flex items-center justify-between rounded-xl border border-sand-200 bg-white p-3.5 shadow-soft"
+                  className="group flex animate-pop-in items-center justify-between rounded-xl border border-sand-200 bg-white p-3.5 shadow-soft transition-all duration-300 hover:border-sage-200 hover:shadow-lift"
                 >
                   <div>
                     <div className="font-medium text-ink-900 capitalize">{m.name}</div>
@@ -157,7 +157,7 @@ export function SymptomsPage() {
                   </div>
                   <button
                     onClick={() => handleDeactivateMed(m.id)}
-                    className="rounded-lg px-2 py-1 text-xs text-ink-500 opacity-0 transition-opacity hover:bg-sand-100 group-hover:opacity-100"
+                    className="rounded-lg px-2 py-1 text-xs text-ink-500 opacity-0 transition-all duration-200 hover:bg-sand-100 hover:scale-105 group-hover:opacity-100"
                   >
                     Stop taking
                   </button>
