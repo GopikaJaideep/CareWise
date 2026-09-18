@@ -1,0 +1,30 @@
+services:
+  backend:
+    build: ./backend
+    container_name: carewise-backend
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
+      - DATABASE_URL=sqlite+aiosqlite:////data/carewise.db
+      - LLM_MODEL=${LLM_MODEL:-claude-sonnet-4-5-20250929}
+      - CORS_ORIGINS=["http://localhost","http://localhost:80","http://localhost:8080"]
+    volumes:
+      - carewise-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: carewise-frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  carewise-data:
