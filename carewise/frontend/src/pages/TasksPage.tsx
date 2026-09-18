@@ -17,6 +17,7 @@ export function TasksPage() {
   const [newDate, setNewDate] = useState("");
   const [newCategory, setNewCategory] = useState("general");
   const [submitting, setSubmitting] = useState(false);
+  const [completingIds, setCompletingIds] = useState<Set<number>>(new Set());
 
   const load = async () => {
     const data = await api.tasks();
@@ -29,8 +30,17 @@ export function TasksPage() {
   }, []);
 
   const handleComplete = async (id: number) => {
+    setCompletingIds((prev) => new Set(prev).add(id));
     await api.completeTask(id);
-    setTasks((ts) => ts.filter((t) => t.id !== id));
+    // Let the checkmark-and-strikethrough animation play before the row leaves.
+    setTimeout(() => {
+      setTasks((ts) => ts.filter((t) => t.id !== id));
+      setCompletingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }, 550);
   };
 
   const handleAdd = async (e: React.FormEvent) => {
@@ -121,16 +131,16 @@ export function TasksPage() {
         ) : (
           <div className="mt-8 space-y-8">
             {grouped.today.length > 0 && (
-              <Section title="Today" tasks={grouped.today} onComplete={handleComplete} />
+              <Section title="Today" tasks={grouped.today} onComplete={handleComplete} completingIds={completingIds} />
             )}
             {grouped.tomorrow.length > 0 && (
-              <Section title="Tomorrow" tasks={grouped.tomorrow} onComplete={handleComplete} />
+              <Section title="Tomorrow" tasks={grouped.tomorrow} onComplete={handleComplete} completingIds={completingIds} />
             )}
             {grouped.upcoming.length > 0 && (
-              <Section title="Upcoming" tasks={grouped.upcoming} onComplete={handleComplete} />
+              <Section title="Upcoming" tasks={grouped.upcoming} onComplete={handleComplete} completingIds={completingIds} />
             )}
             {grouped.undated.length > 0 && (
-              <Section title="No date set" tasks={grouped.undated} onComplete={handleComplete} />
+              <Section title="No date set" tasks={grouped.undated} onComplete={handleComplete} completingIds={completingIds} />
             )}
           </div>
         )}
@@ -143,10 +153,12 @@ function Section({
   title,
   tasks,
   onComplete,
+  completingIds,
 }: {
   title: string;
   tasks: CareTask[];
   onComplete: (id: number) => void;
+  completingIds: Set<number>;
 }) {
   return (
     <div>
@@ -155,21 +167,39 @@ function Section({
         {tasks.map((t) => {
           const meta = CATEGORY_META[t.category] ?? CATEGORY_META.general;
           const Icon = meta.Icon;
+          const isCompleting = completingIds.has(t.id);
           return (
             <div
               key={t.id}
-              className="group flex items-center gap-3 rounded-xl border border-sand-200 bg-white p-3.5 shadow-soft transition-colors hover:border-sage-200"
+              className={`group flex items-center gap-3 rounded-xl border border-sand-200 bg-white p-3.5 shadow-soft transition-all duration-500 ease-out hover:border-sage-200 ${
+                isCompleting ? "-translate-x-1 opacity-40" : ""
+              }`}
             >
               <button
                 onClick={() => onComplete(t.id)}
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-sand-300 transition-all hover:border-sage-500 hover:bg-sage-50"
+                disabled={isCompleting}
+                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 transition-all duration-200 ${
+                  isCompleting
+                    ? "border-sage-500 bg-sage-500"
+                    : "border-sand-300 hover:border-sage-500 hover:bg-sage-50"
+                }`}
                 aria-label="Mark complete"
               >
-                <Check className="h-3.5 w-3.5 text-transparent group-hover:text-sage-600" />
+                <Check
+                  className={`h-3.5 w-3.5 transition-colors ${
+                    isCompleting ? "animate-check-pop text-white" : "text-transparent group-hover:text-sage-600"
+                  }`}
+                />
               </button>
               <Icon className="h-4 w-4 shrink-0 text-ink-500" />
               <div className="flex-1 min-w-0">
-                <div className="text-[15px] font-medium text-ink-900 truncate">{t.title}</div>
+                <div
+                  className={`text-[15px] font-medium truncate transition-all duration-300 ${
+                    isCompleting ? "text-ink-500 line-through" : "text-ink-900"
+                  }`}
+                >
+                  {t.title}
+                </div>
                 {t.due_at && (
                   <div className="text-xs text-ink-500">{formatDateTime(t.due_at)}</div>
                 )}
