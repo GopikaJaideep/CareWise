@@ -1,10 +1,26 @@
 """Pydantic schemas for request/response validation."""
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any
+from datetime import datetime, timezone
+from typing import Annotated, Any
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, PlainSerializer
+
+
+def _as_utc_iso(dt: datetime) -> str:
+    """SQLite drops tzinfo on round-trip, so every stored datetime here is
+    implicitly UTC (everything is written via utcnow()-style helpers or a
+    client-supplied ISO string that's already UTC) but comes back naive.
+    Serializing it without a UTC marker makes JS `new Date(...)` on the
+    frontend silently reinterpret it as *local* time instead of UTC —
+    stamping the marker back on here is what fixes that.
+    """
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat()
+
+
+UTCDateTime = Annotated[datetime, PlainSerializer(_as_utc_iso, return_type=str)]
 
 
 # --- Auth ---
@@ -74,7 +90,7 @@ class MessageOut(BaseModel):
     role: str
     content: str
     agent_used: str | None
-    created_at: datetime
+    created_at: UTCDateTime
 
     class Config:
         from_attributes = True
@@ -83,7 +99,7 @@ class MessageOut(BaseModel):
 class ConversationOut(BaseModel):
     id: int
     title: str
-    created_at: datetime
+    created_at: UTCDateTime
     messages: list[MessageOut] = []
 
     class Config:
@@ -103,7 +119,7 @@ class SymptomLogOut(BaseModel):
     symptom: str
     severity: int
     notes: str | None
-    logged_at: datetime
+    logged_at: UTCDateTime
 
     class Config:
         from_attributes = True
@@ -139,7 +155,7 @@ class CareTaskOut(BaseModel):
     id: int
     title: str
     description: str | None
-    due_at: datetime | None
+    due_at: UTCDateTime | None
     completed: bool
     category: str
 
@@ -155,7 +171,7 @@ class BurnoutCheckinOut(BaseModel):
     self_care_minutes: int
     notes: str | None
     burnout_score: float
-    created_at: datetime
+    created_at: UTCDateTime
 
     class Config:
         from_attributes = True
