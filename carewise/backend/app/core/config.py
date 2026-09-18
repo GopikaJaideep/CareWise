@@ -26,13 +26,26 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
 
     # CORS
-    cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+    # Plain comma-separated string, not list[str]: pydantic-settings tries to
+    # JSON-parse env values for list-typed fields, and a malformed array
+    # pasted into a dashboard's env-var field (missing/mismatched quotes or
+    # brackets) crashes the app on startup. A plain string is far more
+    # forgiving to hand-edit.
+    cors_origins: str = "http://localhost:5173,http://localhost:3000"
 
     # Safety
-    crisis_keywords: list[str] = [
-        "suicide", "kill myself", "end my life", "want to die",
-        "hurt myself", "self-harm", "no reason to live",
-    ]
+    crisis_keywords: str = (
+        "suicide,kill myself,end my life,want to die,"
+        "hurt myself,self-harm,no reason to live"
+    )
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+
+    @property
+    def crisis_keywords_list(self) -> list[str]:
+        return [kw.strip() for kw in self.crisis_keywords.split(",") if kw.strip()]
 
 
 @lru_cache
