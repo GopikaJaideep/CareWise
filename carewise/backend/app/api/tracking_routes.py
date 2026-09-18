@@ -10,11 +10,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents.burnout_monitor import categorise
 from app.api.schemas import (
     BurnoutCheckinOut, CareTaskCreate, CareTaskOut, DashboardSummary,
-    MedicationOut, SymptomLogOut,
+    MedicationCreate, MedicationOut, PushSubscriptionCreate, SymptomLogCreate,
+    SymptomLogOut, VapidPublicKeyOut,
 )
 from app.core.auth import get_current_user
+from app.core.config import get_settings
 from app.core.database import get_db
-from app.models.db import BurnoutCheckin, CareTask, Medication, SymptomLog, User
+from app.core.quotes import quote_of_the_day
+from app.models.db import BurnoutCheckin, CareTask, Medication, PushSubscription, SymptomLog, User
+
+settings = get_settings()
 
 router = APIRouter(prefix="/api", tags=["tracking"])
 
@@ -34,6 +39,25 @@ async def list_symptoms(
     return list(result.scalars())
 
 
+@router.post("/symptoms", response_model=SymptomLogOut)
+async def create_symptom(
+    payload: SymptomLogCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    log = SymptomLog(
+        user_id=current_user.id,
+        symptom=payload.symptom,
+        severity=payload.severity,
+        notes=payload.notes,
+        **({"logged_at": payload.logged_at} if payload.logged_at else {}),
+    )
+    db.add(log)
+    await db.commit()
+    await db.refresh(log)
+    return log
+
+
 @router.get("/medications", response_model=list[MedicationOut])
 async def list_medications(
     current_user: User = Depends(get_current_user),
@@ -45,6 +69,43 @@ async def list_medications(
         .order_by(Medication.created_at.desc())
     )
     return list(result.scalars())
+
+
+@router.post("/medications", response_model=MedicationOut)
+async def create_medication(
+    payload: MedicationCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    med = Medication(
+        user_id=current_user.id,
+        name=payload.name,
+        dosage=payload.dosage,
+        schedule=payload.schedule,
+        notes=payload.notes,
+    )
+    db.add(med)
+    await db.commit()
+    await db.refresh(med)
+    return med
+
+
+@router.patch("/medications/{medication_id}/deactivate", response_model=MedicationOut)
+async def deactivate_medication(
+    medication_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Medication).where(Medication.id == medication_id, Medication.user_id == current_user.id)
+    )
+    med = result.scalar_one_or_none()
+    if not med:
+        raise HTTPException(status_code=404, detail="Medication not found")
+    med.active = False
+    await db.commit()
+    await db.refresh(med)
+    return med
 
 
 @router.get("/tasks", response_model=list[CareTaskOut])
@@ -113,6 +174,52 @@ async def list_burnout(
     return list(result.scalars())
 
 
+@router.get("/push/vapid-public-key", response_model=VapidPublicKeyOut)
+async def get_vapid_public_key():
+    return VapidPublicKeyOut(public_key=settings.vapid_public_key)
+
+
+@router.post("/push/subscribe", status_code=204)
+async def subscribe_push(
+    payload: PushSubscriptionCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(PushSubscription).where(PushSubscription.endpoint == payload.endpoint)
+    )
+    existing = result.scalar_one_or_none()
+    if existing:
+        existing.user_id = current_user.id
+        existing.p256dh = payload.keys.p256dh
+        existing.auth = payload.keys.auth
+    else:
+        db.add(PushSubscription(
+            user_id=current_user.id,
+            endpoint=payload.endpoint,
+            p256dh=payload.keys.p256dh,
+            auth=payload.keys.auth,
+        ))
+    await db.commit()
+
+
+@router.delete("/push/subscribe", status_code=204)
+async def unsubscribe_push(
+    endpoint: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(PushSubscription).where(
+            PushSubscription.endpoint == endpoint, PushSubscription.user_id == current_user.id
+        )
+    )
+    sub = result.scalar_one_or_none()
+    if sub:
+        await db.delete(sub)
+        await db.commit()
+
+
 @router.get("/dashboard", response_model=DashboardSummary)
 async def dashboard(
     current_user: User = Depends(get_current_user),
@@ -169,4 +276,5 @@ async def dashboard(
         burnout_category=categorise(latest.burnout_score) if latest else None,
         burnout_trend=trend,
         active_medications=med_count,
+        quote_of_the_day=quote_of_the_day(seed_key=str(current_user.id)),
     )
