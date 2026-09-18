@@ -5,9 +5,11 @@ import {
 } from "recharts";
 import {
   Activity, Calendar, Battery, Pill, ArrowRight, Loader2, MessageCircle,
+  BellRing, BellOff, Sparkles,
 } from "lucide-react";
 import { api, type DashboardSummary } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { disablePushReminders, enablePushReminders, pushPermission } from "../lib/push";
 
 export function DashboardPage() {
   const { user } = useAuth();
@@ -57,6 +59,13 @@ export function DashboardPage() {
             Talk to CareWise
           </Link>
         </div>
+
+        <div className="mt-6 flex items-start gap-3 rounded-xl border border-sage-200 bg-sage-50 p-4">
+          <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-sage-600" />
+          <p className="text-sm italic text-ink-800">"{summary.quote_of_the_day}"</p>
+        </div>
+
+        <ReminderToggle />
 
         <div className="mt-8 grid gap-4 md:grid-cols-3">
           <StatCard
@@ -183,6 +192,74 @@ export function DashboardPage() {
             </div>
           )}
       </div>
+    </div>
+  );
+}
+
+function ReminderToggle() {
+  const [status, setStatus] = useState<"loading" | "unsupported" | "off" | "on" | "denied">(
+    "loading"
+  );
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    const perm = pushPermission();
+    if (perm === "unsupported") setStatus("unsupported");
+    else if (perm === "denied") setStatus("denied");
+    else if (perm === "granted") setStatus("on");
+    else setStatus("off");
+  }, []);
+
+  if (status === "loading" || status === "unsupported") return null;
+
+  const handleEnable = async () => {
+    setBusy(true);
+    try {
+      const result = await enablePushReminders();
+      setStatus(result.ok ? "on" : result.reason === "denied" ? "denied" : "off");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDisable = async () => {
+    setBusy(true);
+    try {
+      await disablePushReminders();
+      setStatus("off");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 flex items-center justify-between rounded-xl border border-sand-200 bg-white p-3.5 shadow-soft">
+      <div className="flex items-center gap-3">
+        {status === "on" ? (
+          <BellRing className="h-4 w-4 text-sage-600" />
+        ) : (
+          <BellOff className="h-4 w-4 text-ink-500" />
+        )}
+        <div>
+          <div className="text-sm font-medium text-ink-900">
+            {status === "on" ? "Reminders are on" : "Reminders are off"}
+          </div>
+          <div className="text-xs text-ink-500">
+            {status === "denied"
+              ? "Notifications are blocked in your browser settings."
+              : "A gentle morning quote, plus a heads-up 5 minutes before appointments."}
+          </div>
+        </div>
+      </div>
+      {status === "denied" ? null : status === "on" ? (
+        <button onClick={handleDisable} disabled={busy} className="btn-ghost text-xs">
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Turn off"}
+        </button>
+      ) : (
+        <button onClick={handleEnable} disabled={busy} className="btn-primary text-xs">
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Enable reminders"}
+        </button>
+      )}
     </div>
   );
 }

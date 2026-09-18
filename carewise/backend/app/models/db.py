@@ -35,6 +35,7 @@ class User(Base):
     medications: Mapped[list["Medication"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     tasks: Mapped[list["CareTask"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     burnout_checkins: Mapped[list["BurnoutCheckin"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    push_subscriptions: Mapped[list["PushSubscription"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
 class Conversation(Base):
@@ -105,6 +106,7 @@ class CareTask(Base):
     completed: Mapped[bool] = mapped_column(Boolean, default=False)
     category: Mapped[str] = mapped_column(String(60), default="general")  # appointment | medication | errand | general
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    reminded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="tasks")
 
@@ -123,3 +125,18 @@ class BurnoutCheckin(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
     user: Mapped["User"] = relationship(back_populates="burnout_checkins")
+
+
+class PushSubscription(Base):
+    """A browser's Web Push subscription, used to deliver reminder notifications."""
+    __tablename__ = "push_subscriptions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    endpoint: Mapped[str] = mapped_column(Text, unique=True)
+    p256dh: Mapped[str] = mapped_column(String(255))
+    auth: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    last_morning_reminder_date: Mapped[str | None] = mapped_column(String(10), nullable=True)  # "YYYY-MM-DD"
+
+    user: Mapped["User"] = relationship(back_populates="push_subscriptions")

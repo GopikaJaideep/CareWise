@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Activity, Pill, Loader2 } from "lucide-react";
+import { Activity, Pill, Loader2, Plus, X } from "lucide-react";
 import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip } from "recharts";
 import { api, type Medication, type SymptomLog } from "../lib/api";
 
@@ -7,15 +7,23 @@ export function SymptomsPage() {
   const [symptoms, setSymptoms] = useState<SymptomLog[]>([]);
   const [meds, setMeds] = useState<Medication[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showSymptomForm, setShowSymptomForm] = useState(false);
+  const [showMedForm, setShowMedForm] = useState(false);
+
+  const load = async () => {
+    const [s, m] = await Promise.all([api.symptoms(14), api.medications()]);
+    setSymptoms(s);
+    setMeds(m);
+  };
 
   useEffect(() => {
-    Promise.all([api.symptoms(14), api.medications()])
-      .then(([s, m]) => {
-        setSymptoms(s);
-        setMeds(m);
-      })
-      .finally(() => setLoading(false));
+    load().finally(() => setLoading(false));
   }, []);
+
+  const handleDeactivateMed = async (id: number) => {
+    await api.deactivateMedication(id);
+    setMeds((ms) => ms.filter((m) => m.id !== id));
+  };
 
   if (loading) {
     return (
@@ -33,7 +41,7 @@ export function SymptomsPage() {
       <div className="mx-auto max-w-3xl px-4 py-8 md:px-6">
         <h1 className="font-serif text-3xl font-semibold tracking-tight">Symptoms & medications</h1>
         <p className="mt-1 text-sm text-ink-600">
-          Tell CareWise about symptoms or meds in chat — they'll appear here for the care team to see.
+          Log directly below, or tell CareWise in chat — either way it shows up here for the care team to see.
         </p>
 
         {/* Severity chart */}
@@ -62,13 +70,30 @@ export function SymptomsPage() {
 
         {/* Symptom list */}
         <div className="mt-6">
-          <div className="mb-3 flex items-center gap-2">
-            <Activity className="h-4 w-4 text-sage-600" />
-            <h2 className="font-serif text-xl font-semibold text-ink-900">Recent symptoms</h2>
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Activity className="h-4 w-4 text-sage-600" />
+              <h2 className="font-serif text-xl font-semibold text-ink-900">Recent symptoms</h2>
+            </div>
+            <button onClick={() => setShowSymptomForm((v) => !v)} className="btn-ghost text-xs">
+              {showSymptomForm ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+              {showSymptomForm ? "Cancel" : "Log symptom"}
+            </button>
           </div>
+
+          {showSymptomForm && (
+            <SymptomForm
+              onSubmit={async (data) => {
+                await api.logSymptom(data);
+                setShowSymptomForm(false);
+                await load();
+              }}
+            />
+          )}
+
           {symptoms.length === 0 ? (
             <div className="card text-sm text-ink-600">
-              Nothing logged yet. Try saying something like "Mum had nausea this morning, around a 6" in chat.
+              Nothing logged yet. Log one above, or tell CareWise in chat — e.g. "Mum had nausea this morning, around a 6."
             </div>
           ) : (
             <div className="space-y-2">
@@ -91,26 +116,51 @@ export function SymptomsPage() {
 
         {/* Medications */}
         <div className="mt-8">
-          <div className="mb-3 flex items-center gap-2">
-            <Pill className="h-4 w-4 text-sage-600" />
-            <h2 className="font-serif text-xl font-semibold text-ink-900">Active medications</h2>
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Pill className="h-4 w-4 text-sage-600" />
+              <h2 className="font-serif text-xl font-semibold text-ink-900">Active medications</h2>
+            </div>
+            <button onClick={() => setShowMedForm((v) => !v)} className="btn-ghost text-xs">
+              {showMedForm ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+              {showMedForm ? "Cancel" : "Add medication"}
+            </button>
           </div>
+
+          {showMedForm && (
+            <MedicationForm
+              onSubmit={async (data) => {
+                await api.addMedication(data);
+                setShowMedForm(false);
+                await load();
+              }}
+            />
+          )}
+
           {meds.length === 0 ? (
             <div className="card text-sm text-ink-600">
-              No medications tracked. Tell CareWise in chat — e.g., "Add ondansetron 8mg, twice a day."
+              No medications tracked. Add one above, or tell CareWise in chat — e.g., "Add ondansetron 8mg, twice a day."
             </div>
           ) : (
             <div className="space-y-2">
               {meds.map((m) => (
                 <div
                   key={m.id}
-                  className="rounded-xl border border-sand-200 bg-white p-3.5 shadow-soft"
+                  className="group flex items-center justify-between rounded-xl border border-sand-200 bg-white p-3.5 shadow-soft"
                 >
-                  <div className="font-medium text-ink-900 capitalize">{m.name}</div>
-                  <div className="text-sm text-ink-700">
-                    {m.dosage} · {m.schedule}
+                  <div>
+                    <div className="font-medium text-ink-900 capitalize">{m.name}</div>
+                    <div className="text-sm text-ink-700">
+                      {m.dosage} · {m.schedule}
+                    </div>
+                    {m.notes && <div className="mt-1 text-xs text-ink-500">{m.notes}</div>}
                   </div>
-                  {m.notes && <div className="mt-1 text-xs text-ink-500">{m.notes}</div>}
+                  <button
+                    onClick={() => handleDeactivateMed(m.id)}
+                    className="rounded-lg px-2 py-1 text-xs text-ink-500 opacity-0 transition-opacity hover:bg-sand-100 group-hover:opacity-100"
+                  >
+                    Stop taking
+                  </button>
                 </div>
               ))}
             </div>
@@ -118,6 +168,142 @@ export function SymptomsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function SymptomForm({
+  onSubmit,
+}: {
+  onSubmit: (data: { symptom: string; severity: number; notes?: string }) => Promise<void>;
+}) {
+  const [symptom, setSymptom] = useState("");
+  const [severity, setSeverity] = useState(5);
+  const [notes, setNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!symptom.trim()) return;
+    setSubmitting(true);
+    try {
+      await onSubmit({ symptom: symptom.trim(), severity, notes: notes.trim() || undefined });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="card mb-4 animate-slide-up">
+      <input
+        autoFocus
+        type="text"
+        required
+        className="input-field"
+        placeholder="What symptom? (e.g. nausea, fatigue, pain)"
+        value={symptom}
+        onChange={(e) => setSymptom(e.target.value)}
+      />
+      <div className="mt-3">
+        <label className="text-xs font-medium text-ink-600">Severity: {severity}/10</label>
+        <input
+          type="range"
+          min={1}
+          max={10}
+          value={severity}
+          onChange={(e) => setSeverity(Number(e.target.value))}
+          className="mt-1 w-full accent-sage-600"
+        />
+      </div>
+      <input
+        type="text"
+        className="input-field mt-3"
+        placeholder="Notes (optional)"
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+      />
+      <div className="mt-4 flex justify-end">
+        <button type="submit" disabled={submitting} className="btn-primary">
+          {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Log symptom"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function MedicationForm({
+  onSubmit,
+}: {
+  onSubmit: (data: {
+    name: string;
+    dosage: string;
+    schedule: string;
+    notes?: string;
+  }) => Promise<void>;
+}) {
+  const [name, setName] = useState("");
+  const [dosage, setDosage] = useState("");
+  const [schedule, setSchedule] = useState("");
+  const [notes, setNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim() || !dosage.trim() || !schedule.trim()) return;
+    setSubmitting(true);
+    try {
+      await onSubmit({
+        name: name.trim(),
+        dosage: dosage.trim(),
+        schedule: schedule.trim(),
+        notes: notes.trim() || undefined,
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="card mb-4 animate-slide-up">
+      <input
+        autoFocus
+        type="text"
+        required
+        className="input-field"
+        placeholder="Medication name"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+      />
+      <div className="mt-3 grid grid-cols-2 gap-3">
+        <input
+          type="text"
+          required
+          className="input-field"
+          placeholder="Dosage (e.g. 8mg)"
+          value={dosage}
+          onChange={(e) => setDosage(e.target.value)}
+        />
+        <input
+          type="text"
+          required
+          className="input-field"
+          placeholder="Schedule (e.g. twice a day)"
+          value={schedule}
+          onChange={(e) => setSchedule(e.target.value)}
+        />
+      </div>
+      <input
+        type="text"
+        className="input-field mt-3"
+        placeholder="Notes (optional)"
+        value={notes}
+        onChange={(e) => setNotes(e.target.value)}
+      />
+      <div className="mt-4 flex justify-end">
+        <button type="submit" disabled={submitting} className="btn-primary">
+          {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Add medication"}
+        </button>
+      </div>
+    </form>
   );
 }
 
