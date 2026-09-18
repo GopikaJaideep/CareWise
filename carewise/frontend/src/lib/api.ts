@@ -137,6 +137,7 @@ export interface DashboardSummary {
   burnout_category: string | null;
   burnout_trend: number[];
   active_medications: number;
+  quote_of_the_day: string;
 }
 
 // --- Endpoints ---
@@ -175,7 +176,27 @@ export const api = {
 
   symptoms: (days = 14) => request<SymptomLog[]>(`/symptoms?days=${days}`),
 
+  logSymptom: (data: { symptom: string; severity: number; notes?: string }) =>
+    request<SymptomLog>("/symptoms", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
   medications: () => request<Medication[]>("/medications"),
+
+  addMedication: (data: {
+    name: string;
+    dosage: string;
+    schedule: string;
+    notes?: string;
+  }) =>
+    request<Medication>("/medications", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  deactivateMedication: (id: number) =>
+    request<Medication>(`/medications/${id}/deactivate`, { method: "PATCH" }),
 
   tasks: (includeCompleted = false) =>
     request<CareTask[]>(`/tasks?include_completed=${includeCompleted}`),
@@ -198,4 +219,17 @@ export const api = {
     request<BurnoutCheckin[]>(`/burnout/checkins?limit=${limit}`),
 
   dashboard: () => request<DashboardSummary>("/dashboard"),
+
+  vapidPublicKey: () => request<{ public_key: string }>("/push/vapid-public-key"),
+
+  subscribePush: (subscription: PushSubscriptionJSON) =>
+    request<void>("/push/subscribe", {
+      method: "POST",
+      body: JSON.stringify(subscription),
+    }),
+
+  unsubscribePush: (endpoint: string) =>
+    request<void>(`/push/subscribe?endpoint=${encodeURIComponent(endpoint)}`, {
+      method: "DELETE",
+    }),
 };

@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     # forgiving to hand-edit.
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
 
+    # Push notifications (Web Push / VAPID)
+    vapid_private_key: str = ""
+    vapid_public_key: str = ""
+    vapid_claim_email: str = "mailto:admin@example.com"
+    morning_reminder_hour_utc: int = 8
+
     # Safety
     crisis_keywords: str = (
         "suicide,kill myself,end my life,want to die,"

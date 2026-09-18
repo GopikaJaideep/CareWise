@@ -82,6 +82,13 @@ class ConversationOut(BaseModel):
 
 
 # --- Tracking ---
+class SymptomLogCreate(BaseModel):
+    symptom: str = Field(min_length=1, max_length=120)
+    severity: int = Field(ge=1, le=10)
+    notes: str | None = None
+    logged_at: datetime | None = None
+
+
 class SymptomLogOut(BaseModel):
     id: int
     symptom: str
@@ -91,6 +98,13 @@ class SymptomLogOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class MedicationCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    dosage: str = Field(min_length=1, max_length=60)
+    schedule: str = Field(min_length=1, max_length=120)
+    notes: str | None = None
 
 
 class MedicationOut(BaseModel):
@@ -138,6 +152,21 @@ class BurnoutCheckinOut(BaseModel):
         from_attributes = True
 
 
+# --- Push notifications ---
+class PushSubscriptionKeys(BaseModel):
+    p256dh: str
+    auth: str
+
+
+class PushSubscriptionCreate(BaseModel):
+    endpoint: str
+    keys: PushSubscriptionKeys
+
+
+class VapidPublicKeyOut(BaseModel):
+    public_key: str
+
+
 class DashboardSummary(BaseModel):
     open_tasks_count: int
     today_tasks_count: int
@@ -146,3 +175,4 @@ class DashboardSummary(BaseModel):
     burnout_category: str | None
     burnout_trend: list[float]
     active_medications: int
+    quote_of_the_day: str
