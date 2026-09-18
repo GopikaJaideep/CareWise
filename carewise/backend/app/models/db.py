@@ -36,6 +36,7 @@ class User(Base):
     tasks: Mapped[list["CareTask"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     burnout_checkins: Mapped[list["BurnoutCheckin"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     push_subscriptions: Mapped[list["PushSubscription"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    reset_tokens: Mapped[list["PasswordResetToken"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
 class Conversation(Base):
@@ -140,3 +141,22 @@ class PushSubscription(Base):
     last_morning_reminder_date: Mapped[str | None] = mapped_column(String(10), nullable=True)  # "YYYY-MM-DD"
 
     user: Mapped["User"] = relationship(back_populates="push_subscriptions")
+
+
+class PasswordResetToken(Base):
+    """A single-use, expiring token for the forgot-password flow.
+
+    Only a SHA-256 hash of the token is stored — the raw token is emailed to
+    the user and never persisted, so a DB leak alone can't be used to reset
+    an account's password.
+    """
+    __tablename__ = "password_reset_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    used: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+
+    user: Mapped["User"] = relationship(back_populates="reset_tokens")

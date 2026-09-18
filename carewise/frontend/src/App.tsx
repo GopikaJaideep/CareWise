@@ -3,6 +3,8 @@ import { Loader2 } from "lucide-react";
 import { AuthProvider, useAuth } from "./lib/auth";
 import { LandingPage } from "./pages/LandingPage";
 import { AuthPage } from "./pages/AuthPage";
+import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
+import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { ChatPage } from "./pages/ChatPage";
 import { TasksPage } from "./pages/TasksPage";
@@ -61,6 +63,8 @@ export default function App() {
             </PublicOnlyRoute>
           }
         />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route
           path="/app"
           element={
