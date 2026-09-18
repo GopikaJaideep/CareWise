@@ -63,7 +63,7 @@ def detect_crisis(text: str) -> SafetyCheck:
     for emergency support.
     """
     lower = text.lower()
-    triggers = [kw for kw in settings.crisis_keywords if kw in lower]
+    triggers = [kw for kw in settings.crisis_keywords_list if kw in lower]
 
     if triggers:
         return SafetyCheck(
