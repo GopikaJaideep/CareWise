@@ -128,7 +128,14 @@ export function AuthPage({ mode }: AuthPageProps) {
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-ink-800">Password</label>
+              <div className="mb-1 flex items-center justify-between">
+                <label className="block text-sm font-medium text-ink-800">Password</label>
+                {!isRegister && (
+                  <Link to="/forgot-password" className="text-xs font-medium text-sage-700 hover:underline">
+                    Forgot password?
+                  </Link>
+                )}
+              </div>
               <input
                 required
                 type="password"

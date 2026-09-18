@@ -163,6 +163,18 @@ export const api = {
 
   me: () => request<User>("/auth/me"),
 
+  forgotPassword: (email: string) =>
+    request<void>("/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+
+  resetPassword: (token: string, new_password: string) =>
+    request<void>("/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ token, new_password }),
+    }),
+
   chat: (message: string, conversation_id?: number) =>
     request<ChatResponse>("/chat", {
       method: "POST",
