@@ -76,9 +76,9 @@ export function LandingPage() {
         </p>
 
         <div className="mt-10 flex flex-wrap items-center justify-center gap-3 animate-slide-up" style={{ animationDelay: "200ms" }}>
-          <Link to="/register" className="btn-primary">
+          <Link to="/register" className="btn-primary group">
             Start using CareWise
-            <ArrowRight className="h-4 w-4" />
+            <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
           </Link>
           <a
             href="#how-it-works"
@@ -108,10 +108,10 @@ export function LandingPage() {
           {FEATURES.map(({ Icon, title, body }, i) => (
             <div
               key={title}
-              className="bg-sand-50 p-7 hover:bg-white transition-colors"
-              style={{ animationDelay: `${i * 60}ms` }}
+              className="group animate-fade-in bg-sand-50 p-7 transition-all duration-300 hover:z-10 hover:-translate-y-1 hover:bg-white hover:shadow-lift"
+              style={{ animationDelay: `${i * 80}ms`, animationFillMode: "backwards" }}
             >
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sage-50 text-sage-600">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sage-50 text-sage-600 transition-all duration-300 group-hover:scale-110 group-hover:bg-sage-100">
                 <Icon className="h-5 w-5" />
               </div>
               <h3 className="mt-5 font-serif text-xl font-semibold text-ink-900">{title}</h3>

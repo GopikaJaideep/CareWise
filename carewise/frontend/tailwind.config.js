@@ -52,6 +52,9 @@ export default {
         "fade-in": "fadeIn 300ms ease-out",
         "slide-up": "slideUp 350ms cubic-bezier(0.16, 1, 0.3, 1)",
         "pulse-soft": "pulseSoft 2.5s ease-in-out infinite",
+        "pop-in": "popIn 400ms cubic-bezier(0.34, 1.56, 0.64, 1)",
+        "check-pop": "checkPop 380ms cubic-bezier(0.34, 1.56, 0.64, 1)",
+        "count-up": "countUp 500ms ease-out",
       },
       keyframes: {
         fadeIn: { "0%": { opacity: "0" }, "100%": { opacity: "1" } },
@@ -62,6 +65,19 @@ export default {
         pulseSoft: {
           "0%, 100%": { opacity: "0.5" },
           "50%": { opacity: "1" },
+        },
+        popIn: {
+          "0%": { opacity: "0", transform: "scale(0.9) translateY(6px)" },
+          "100%": { opacity: "1", transform: "scale(1) translateY(0)" },
+        },
+        checkPop: {
+          "0%": { transform: "scale(0.6)" },
+          "60%": { transform: "scale(1.15)" },
+          "100%": { transform: "scale(1)" },
+        },
+        countUp: {
+          "0%": { opacity: "0", transform: "translateY(4px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
         },
       },
     },
