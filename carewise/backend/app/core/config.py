@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     # forgiving to hand-edit.
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
 
+    # Password reset email (Resend)
+    resend_api_key: str = ""
+    resend_from_email: str = "CareWise <onboarding@resend.dev>"
+    frontend_url: str = "http://localhost:5173"
+    reset_token_expire_minutes: int = 30
+
     # Push notifications (Web Push / VAPID)
     vapid_private_key: str = ""
     vapid_public_key: str = ""
