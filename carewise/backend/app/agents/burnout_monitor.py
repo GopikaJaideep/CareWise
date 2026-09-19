@@ -104,12 +104,17 @@ class BurnoutMonitorAgent(BaseAgent):
             schema_hint='{"sleep_hours": float|null, "stress_level": int|null, "energy_level": int|null, "self_care_minutes": int|null, "notes": str|null, "is_checkin": bool}',
         )
 
-        if not extraction.get("is_checkin"):
+        required = ["sleep_hours", "stress_level", "energy_level", "self_care_minutes"]
+
+        # "Run a burnout check-in: 5 hours sleep, stress 8..." both asks for a
+        # check-in and supplies data, and the model's is_checkin flag can land
+        # either way. Any supplied number means the user is giving us data.
+        has_data = any(extraction.get(k) is not None for k in required)
+        if not (extraction.get("is_checkin") or has_data):
             # User is asking for status — return trend
             return await self._handle_trend_query(ctx)
 
         # Need all four fields to compute a score
-        required = ["sleep_hours", "stress_level", "energy_level", "self_care_minutes"]
         missing = [k for k in required if extraction.get(k) is None]
 
         if missing:
