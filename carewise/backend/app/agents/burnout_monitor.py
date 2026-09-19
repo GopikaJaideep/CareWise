@@ -11,6 +11,7 @@ Score is clinical-style triage only, NOT a diagnostic instrument.
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
@@ -19,6 +20,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents.base import AgentName, AgentResponse, BaseAgent, SessionContext
 from app.models.db import BurnoutCheckin
 from app.services.llm import get_llm_client
+
+logger = logging.getLogger(__name__)
 
 
 EXTRACTION_SYSTEM = """Extract a caregiver burnout check-in from the message.
@@ -111,7 +114,11 @@ class BurnoutMonitorAgent(BaseAgent):
         # either way. Any supplied number means the user is giving us data.
         has_data = any(extraction.get(k) is not None for k in required)
         if not (extraction.get("is_checkin") or has_data):
-            # User is asking for status — return trend
+            # User is asking for status — return trend. Field names only, never values.
+            logger.info(
+                "Burnout: treating message as a status query (is_checkin=%r, keys=%s)",
+                extraction.get("is_checkin"), sorted(extraction),
+            )
             return await self._handle_trend_query(ctx)
 
         # Need all four fields to compute a score
