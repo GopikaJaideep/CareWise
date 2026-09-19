@@ -94,6 +94,12 @@ export interface MessageOut {
   created_at: string;
 }
 
+export interface ConversationSummary {
+  id: number;
+  title: string;
+  created_at: string;
+}
+
 export interface ConversationOut {
   id: number;
   title: string;
@@ -190,7 +196,7 @@ export const api = {
       body: JSON.stringify({ message, conversation_id, timezone: browserTimezone() }),
     }),
 
-  conversations: () => request<ConversationOut[]>("/chat/conversations"),
+  conversations: () => request<ConversationSummary[]>("/chat/conversations"),
 
   conversation: (id: number) =>
     request<ConversationOut>(`/chat/conversations/${id}`),

@@ -4,11 +4,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.agents.base import SessionContext
 from app.agents.orchestrator import Orchestrator
 from app.api.schemas import (
-    AgentTrace, ChatRequest, ChatResponse, ConversationOut, MessageOut,
+    AgentTrace, ChatRequest, ChatResponse, ConversationOut, ConversationSummary, MessageOut,
 )
 from app.core.auth import get_current_user
 from app.core.database import get_db
@@ -129,7 +130,7 @@ async def chat(
     )
 
 
-@router.get("/conversations", response_model=list[ConversationOut])
+@router.get("/conversations", response_model=list[ConversationSummary])
 async def list_conversations(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -137,7 +138,7 @@ async def list_conversations(
     result = await db.execute(
         select(Conversation)
         .where(Conversation.user_id == current_user.id)
-        .order_by(Conversation.created_at.desc())
+        .order_by(Conversation.created_at.desc(), Conversation.id.desc())
     )
     return list(result.scalars())
 
@@ -148,20 +149,17 @@ async def get_conversation(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> Conversation:
+    # Eager-load messages (ordered by the relationship): lazy-loading, or
+    # assigning to the relationship, raises MissingGreenlet in an async session.
     result = await db.execute(
-        select(Conversation).where(
+        select(Conversation)
+        .where(
             Conversation.id == conversation_id,
             Conversation.user_id == current_user.id,
         )
+        .options(selectinload(Conversation.messages))
     )
     conv = result.scalar_one_or_none()
     if not conv:
         raise HTTPException(status_code=404, detail="Conversation not found")
-
-    msg_result = await db.execute(
-        select(Message)
-        .where(Message.conversation_id == conv.id)
-        .order_by(Message.created_at.asc())
-    )
-    conv.messages = list(msg_result.scalars())
     return conv
