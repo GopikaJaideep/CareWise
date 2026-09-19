@@ -99,6 +99,16 @@ class MessageOut(BaseModel):
         from_attributes = True
 
 
+class ConversationSummary(BaseModel):
+    """List view: no messages, so building it never touches the lazy relationship."""
+    id: int
+    title: str
+    created_at: UTCDateTime
+
+    class Config:
+        from_attributes = True
+
+
 class ConversationOut(BaseModel):
     id: int
     title: str

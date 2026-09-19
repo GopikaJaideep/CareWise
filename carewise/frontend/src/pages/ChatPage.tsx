@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Send, Loader2, Sparkles, MessageCircle } from "lucide-react";
-import { api, type AgentTrace, type MessageOut } from "../lib/api";
+import { Send, Loader2, Sparkles, MessageCircle, History, Plus } from "lucide-react";
+import { api, type AgentTrace, type ConversationSummary, type MessageOut } from "../lib/api";
 import { AgentBadge } from "../components/AgentBadge";
 import { useAuth } from "../lib/auth";
 
@@ -22,39 +22,64 @@ const SUGGESTIONS = [
   "What helps with cancer-related fatigue?",
 ];
 
+function toDisplayMessage(m: MessageOut): DisplayMessage {
+  return {
+    id: m.id,
+    role: m.role as "user" | "assistant",
+    content: m.content,
+    agents: m.agent_used ? [m.agent_used] : undefined,
+    timestamp: new Date(m.created_at),
+  };
+}
+
 export function ChatPage() {
   const { user } = useAuth();
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState("");
   const [conversationId, setConversationId] = useState<number | null>(null);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Load most recent conversation on mount
+  const openConversation = async (id: number) => {
+    setError(null);
+    try {
+      const conv = await api.conversation(id);
+      setConversationId(conv.id);
+      setMessages((conv.messages || []).map(toDisplayMessage));
+      setHistoryOpen(false);
+    } catch {
+      setError("Couldn't open that conversation. Please try again.");
+    }
+  };
+
+  const startNewChat = () => {
+    setConversationId(null);
+    setMessages([]);
+    setError(null);
+    setHistoryOpen(false);
+  };
+
+  // On mount: load the chat list and reopen the most recent conversation.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const convs = await api.conversations();
         if (cancelled) return;
+        setConversations(convs);
         if (convs.length > 0) {
           const recent = await api.conversation(convs[0].id);
           if (cancelled) return;
           setConversationId(recent.id);
-          setMessages(
-            (recent.messages || []).map((m: MessageOut) => ({
-              id: m.id,
-              role: m.role as "user" | "assistant",
-              content: m.content,
-              agents: m.agent_used ? [m.agent_used] : undefined,
-              timestamp: new Date(m.created_at),
-            }))
-          );
+          setMessages((recent.messages || []).map(toDisplayMessage));
         }
       } catch {
-        /* fresh start */
+        // Don't hide this: an empty chat that looks like lost history is worse than an error.
+        if (!cancelled) setError("Couldn't load your previous chats. They're saved — try refreshing.");
       }
     })();
     return () => {
@@ -90,6 +115,10 @@ export function ChatPage() {
 
     try {
       const res = await api.chat(text, conversationId ?? undefined);
+      if (conversationId === null) {
+        // A new conversation was just created; show it in the history list.
+        api.conversations().then(setConversations).catch(() => undefined);
+      }
       setConversationId(res.conversation_id);
       const assistantMsg: DisplayMessage = {
         id: res.message_id,
@@ -112,6 +141,46 @@ export function ChatPage() {
 
   return (
     <div className="flex h-full flex-col bg-sand-50">
+      <div className="border-b border-sand-200 bg-white/70 backdrop-blur-sm">
+        <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-2 md:px-6">
+          <button
+            onClick={() => setHistoryOpen((o) => !o)}
+            aria-expanded={historyOpen}
+            className="btn-ghost text-xs"
+          >
+            <History className="h-3.5 w-3.5" />
+            Chat history{conversations.length > 0 ? ` (${conversations.length})` : ""}
+          </button>
+          <button onClick={startNewChat} className="btn-ghost text-xs">
+            <Plus className="h-3.5 w-3.5" />
+            New chat
+          </button>
+        </div>
+        {historyOpen && (
+          <div className="mx-auto max-w-3xl animate-fade-in px-4 pb-3 md:px-6">
+            {conversations.length === 0 ? (
+              <p className="py-2 text-sm text-ink-600">No past chats yet.</p>
+            ) : (
+              <ul className="max-h-64 space-y-1 overflow-y-auto">
+                {conversations.map((c) => (
+                  <li key={c.id}>
+                    <button
+                      onClick={() => openConversation(c.id)}
+                      className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-sand-100 ${
+                        c.id === conversationId ? "bg-sage-50 text-ink-900" : "text-ink-800"
+                      }`}
+                    >
+                      <span className="truncate">{c.title}</span>
+                      <span className="shrink-0 text-xs text-ink-500">{formatWhen(c.created_at)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+
       <div ref={scrollRef} className="flex-1 overflow-y-auto scroll-fade">
         <div className="mx-auto max-w-3xl px-4 py-8 md:px-6">
           {isEmpty && (
@@ -205,6 +274,15 @@ export function ChatPage() {
       </div>
     </div>
   );
+}
+
+function formatWhen(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, {
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 function MessageBubble({
