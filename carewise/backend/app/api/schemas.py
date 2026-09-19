@@ -70,6 +70,9 @@ class UserOut(BaseModel):
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     conversation_id: int | None = None
+    # IANA name from the browser (e.g. "Australia/Sydney"); used to interpret
+    # "Tuesday at 10". Unknown or missing falls back to UTC.
+    timezone: str | None = Field(default=None, max_length=64)
 
 
 class AgentTrace(BaseModel):

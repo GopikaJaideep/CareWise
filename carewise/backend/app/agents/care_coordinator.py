@@ -11,16 +11,18 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.base import AgentName, AgentResponse, BaseAgent, SessionContext
+from app.core.tz import parse_due_at, resolve_timezone, to_local, tz_label
 from app.models.db import CareTask
 from app.services.llm import get_llm_client
 
 
 EXTRACTION_SYSTEM = """You extract care-coordination tasks from caregiver messages.
 
-Today's date and time (UTC): {now}
+The caregiver's timezone is {tz}. Their current local date and time is: {now}
 
 Return JSON:
-- tasks: array of {title: string, description: string|null, due_at: ISO8601 string|null, category: "appointment"|"medication"|"errand"|"general"}
+- tasks: array of {title: string, description: string|null, due_at: string|null, category: "appointment"|"medication"|"errand"|"general"}
+  due_at is the caregiver's LOCAL date-time as ISO8601 with NO UTC offset or "Z" (e.g. "2026-09-22T10:00:00"). "Tuesday at 10" means 10:00 on the wall clock in {tz}.
 - query: "list_tasks" | "list_today" | "list_upcoming" | null
 - mark_done: array of strings (task titles or descriptions to mark complete)
 
@@ -47,9 +49,16 @@ class CareCoordinatorAgent(BaseAgent):
         self.system_prompt = RESPONSE_SYSTEM
 
     async def handle(self, ctx: SessionContext) -> AgentResponse:
-        now = datetime.now(timezone.utc)
+        tz = resolve_timezone(ctx.metadata.get("timezone"))
+        local_now = datetime.now(timezone.utc).astimezone(tz)
+        # .replace, not .format: the template contains literal JSON braces.
+        system = (
+            EXTRACTION_SYSTEM
+            .replace("{now}", local_now.strftime("%A %Y-%m-%d %H:%M"))
+            .replace("{tz}", tz_label(tz))
+        )
         extraction = await self.llm.complete_json(
-            system=EXTRACTION_SYSTEM.replace("{now}", now.isoformat()),
+            system=system,
             messages=[{"role": "user", "content": ctx.user_message}],
             schema_hint='{"tasks": [...], "query": str|null, "mark_done": [...]}',
         )
@@ -58,12 +67,7 @@ class CareCoordinatorAgent(BaseAgent):
         for t in extraction.get("tasks", []) or []:
             if not t.get("title"):
                 continue
-            due = None
-            if t.get("due_at"):
-                try:
-                    due = datetime.fromisoformat(t["due_at"].replace("Z", "+00:00"))
-                except (ValueError, TypeError):
-                    due = None
+            due = parse_due_at(t["due_at"], tz) if t.get("due_at") else None
             task = CareTask(
                 user_id=ctx.user_id,
                 title=t["title"],
@@ -93,7 +97,7 @@ class CareCoordinatorAgent(BaseAgent):
         query = extraction.get("query")
         list_text = ""
         if query in ("list_tasks", "list_today", "list_upcoming"):
-            list_text = await self._format_task_list(ctx.user_id, query)
+            list_text = await self._format_task_list(ctx.user_id, query, tz)
 
         # Compose response
         parts = []
@@ -119,7 +123,7 @@ class CareCoordinatorAgent(BaseAgent):
             metadata={"added": added, "marked": marked, "extraction": extraction},
         )
 
-    async def _format_task_list(self, user_id: int, query: str) -> str:
+    async def _format_task_list(self, user_id: int, query: str, tz) -> str:
         stmt = select(CareTask).where(
             CareTask.user_id == user_id, CareTask.completed.is_(False)
         ).order_by(CareTask.due_at.asc().nullslast())
@@ -129,27 +133,26 @@ class CareCoordinatorAgent(BaseAgent):
         if not tasks:
             return "No open tasks right now."
 
-        now = datetime.now(timezone.utc)
+        today_local = datetime.now(timezone.utc).astimezone(tz).date()
         today, upcoming, undated = [], [], []
         for t in tasks:
             if t.due_at is None:
-                undated.append(t)
-            elif t.due_at.date() == now.date():
-                today.append(t)
-            else:
-                upcoming.append(t)
+                undated.append((t, None))
+                continue
+            due_local = to_local(t.due_at, tz)
+            (today if due_local.date() == today_local else upcoming).append((t, due_local))
 
         lines = []
         if today:
             lines.append("**Today:**")
-            for t in today:
-                lines.append(f"  • {t.title} ({t.due_at.strftime('%I:%M %p')})")
+            for t, due_local in today:
+                lines.append(f"  • {t.title} ({due_local.strftime('%I:%M %p')})")
         if upcoming:
             lines.append("\n**Upcoming:**")
-            for t in upcoming[:5]:
-                lines.append(f"  • {t.title} — {t.due_at.strftime('%a %d %b')}")
+            for t, due_local in upcoming[:5]:
+                lines.append(f"  • {t.title} — {due_local.strftime('%a %d %b')}")
         if undated and query == "list_tasks":
             lines.append("\n**No date set:**")
-            for t in undated[:3]:
+            for t, _ in undated[:3]:
                 lines.append(f"  • {t.title}")
         return "\n".join(lines)

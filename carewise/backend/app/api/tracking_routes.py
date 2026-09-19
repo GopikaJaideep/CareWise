@@ -17,6 +17,7 @@ from app.core.auth import get_current_user
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.quotes import quote_of_the_day
+from app.core.tz import day_bounds_utc, resolve_timezone
 from app.models.db import BurnoutCheckin, CareTask, Medication, PushSubscription, SymptomLog, User
 
 settings = get_settings()
@@ -222,12 +223,13 @@ async def unsubscribe_push(
 
 @router.get("/dashboard", response_model=DashboardSummary)
 async def dashboard(
+    tz: str | None = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     now = datetime.now(timezone.utc)
-    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-    today_end = today_start + timedelta(days=1)
+    # "Due today" means today in the caregiver's timezone, not UTC's.
+    today_start, today_end = day_bounds_utc(resolve_timezone(tz), now)
     week_ago = now - timedelta(days=7)
 
     open_count = await db.scalar(

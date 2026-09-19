@@ -1,11 +1,9 @@
 """BurnoutMonitorAgent.handle: how extraction results are interpreted."""
-import pytest
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.agents.base import SessionContext
 from app.agents.burnout_monitor import BurnoutMonitorAgent
-from app.models.db import Base, BurnoutCheckin, User
+from app.models.db import BurnoutCheckin
 
 
 class FakeLLM:
@@ -17,18 +15,6 @@ class FakeLLM:
 
     async def complete(self, **kwargs):
         return "reflected reply"
-
-
-@pytest.fixture
-async def db():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    async with async_sessionmaker(engine, expire_on_commit=False)() as session:
-        session.add(User(email="a@example.com", hashed_password="x", display_name="A"))
-        await session.commit()
-        yield session
-    await engine.dispose()
 
 
 def make_agent(db, extraction):
