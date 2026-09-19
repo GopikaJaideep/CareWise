@@ -112,6 +112,20 @@ class TestGeminiClient:
         client = LLMClient(provider="gemini", api_key="k")
         assert await client.complete_json("sys", [{"role": "user", "content": "x"}], "{}") == {}
 
+    async def test_complete_json_unwraps_single_object_list(self, monkeypatch):
+        use_transport(monkeypatch, lambda r: httpx.Response(200, json=gemini_reply('[{"sleep_hours": 5}]')))
+        client = LLMClient(provider="gemini", api_key="k")
+        out = await client.complete_json("sys", [{"role": "user", "content": "x"}], "{}")
+        assert out == {"sleep_hours": 5}
+
+    async def test_complete_json_non_object_is_discarded_with_a_warning(self, monkeypatch, caplog):
+        use_transport(monkeypatch, lambda r: httpx.Response(200, json=gemini_reply("[1, 2]")))
+        client = LLMClient(provider="gemini", api_key="k")
+        with caplog.at_level("WARNING"):
+            out = await client.complete_json("sys", [{"role": "user", "content": "x"}], "{}")
+        assert out == {}
+        assert "Expected a JSON object" in caplog.text
+
     async def test_retries_rate_limit_then_succeeds(self, monkeypatch):
         calls = []
 
