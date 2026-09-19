@@ -1,6 +1,15 @@
 // API client for CareWise backend
 const API_BASE = import.meta.env.VITE_API_BASE || "/api";
 
+/** IANA timezone name (e.g. "Australia/Sydney") so the backend can interpret "Tuesday at 10". */
+function browserTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  } catch {
+    return "UTC";
+  }
+}
+
 export class APIError extends Error {
   status: number;
   constructor(message: string, status: number) {
@@ -178,7 +187,7 @@ export const api = {
   chat: (message: string, conversation_id?: number) =>
     request<ChatResponse>("/chat", {
       method: "POST",
-      body: JSON.stringify({ message, conversation_id }),
+      body: JSON.stringify({ message, conversation_id, timezone: browserTimezone() }),
     }),
 
   conversations: () => request<ConversationOut[]>("/chat/conversations"),
@@ -230,7 +239,8 @@ export const api = {
   burnoutCheckins: (limit = 30) =>
     request<BurnoutCheckin[]>(`/burnout/checkins?limit=${limit}`),
 
-  dashboard: () => request<DashboardSummary>("/dashboard"),
+  dashboard: () =>
+    request<DashboardSummary>(`/dashboard?tz=${encodeURIComponent(browserTimezone())}`),
 
   vapidPublicKey: () => request<{ public_key: string }>("/push/vapid-public-key"),
 
