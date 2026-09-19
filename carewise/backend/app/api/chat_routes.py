@@ -84,6 +84,7 @@ async def chat(
         history=history,
         metadata={
             "recent_burnout_score": latest_bc.burnout_score if latest_bc else None,
+            "timezone": payload.timezone,
         },
     )
 
