@@ -211,7 +211,15 @@ class LLMClient:
         except json.JSONDecodeError as e:
             logger.warning("Failed to parse JSON response: %s\nRaw: %s", e, text[:200])
             return {}
-        return parsed if isinstance(parsed, dict) else {}
+        # Models sometimes wrap the one requested object in a list: [{...}].
+        if isinstance(parsed, list) and len(parsed) == 1 and isinstance(parsed[0], dict):
+            parsed = parsed[0]
+        if not isinstance(parsed, dict):
+            logger.warning(
+                "Expected a JSON object, got %s; discarding. Raw: %s", type(parsed).__name__, text[:200]
+            )
+            return {}
+        return parsed
 
     def _fallback_response(self, messages: list[dict[str, str]]) -> str:
         """Used when no API key is configured (demo mode)."""
