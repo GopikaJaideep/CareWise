@@ -12,8 +12,13 @@ class Settings(BaseSettings):
     debug: bool = False
 
     # LLM
+    # "auto" prefers Gemini (free tier) if GEMINI_API_KEY is set, then Anthropic,
+    # then falls back to demo mode. Set to "gemini" or "anthropic" to force one.
+    llm_provider: str = "auto"
     anthropic_api_key: str = ""
     llm_model: str = "claude-sonnet-4-5-20250929"
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
     llm_max_tokens: int = 1024
     llm_temperature: float = 0.7
 
