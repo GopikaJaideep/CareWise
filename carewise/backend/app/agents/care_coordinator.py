@@ -29,6 +29,16 @@ Return JSON:
 Be conservative. If a date is ambiguous (e.g., "Thursday"), interpret it as the next occurrence. If no date is mentioned, leave due_at null.
 """
 
+CATEGORIES = {"appointment", "medication", "errand", "general"}
+# Shorter fragments than this could match (and complete) many unrelated tasks.
+MIN_MARK_DONE_LEN = 3
+
+NOTHING_SAVED_NOTE = (
+    "\n\nNothing was added, changed or completed in the care plan for this message. Do NOT say "
+    "that anything was added or saved. If the caregiver seems to want a task added, ask for the "
+    "missing detail (what, and when)."
+)
+
 RESPONSE_SYSTEM = """You are the Care Coordinator specialist within CareWise.
 
 Your role:
@@ -68,12 +78,13 @@ class CareCoordinatorAgent(BaseAgent):
             if not t.get("title"):
                 continue
             due = parse_due_at(t["due_at"], tz) if t.get("due_at") else None
+            category = str(t.get("category") or "general").lower()
             task = CareTask(
                 user_id=ctx.user_id,
-                title=t["title"],
+                title=str(t["title"])[:200],
                 description=t.get("description"),
                 due_at=due,
-                category=t.get("category", "general"),
+                category=category if category in CATEGORIES else "general",
             )
             self.db.add(task)
             added.append(t["title"])
@@ -81,10 +92,15 @@ class CareCoordinatorAgent(BaseAgent):
         # Mark done
         marked = []
         for title_fragment in extraction.get("mark_done", []) or []:
+            fragment = str(title_fragment or "").strip()
+            # An empty fragment matched EVERY open task ("%%") and marked them all done.
+            if len(fragment) < MIN_MARK_DONE_LEN:
+                continue
+            escaped = fragment.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             stmt = select(CareTask).where(
                 CareTask.user_id == ctx.user_id,
                 CareTask.completed.is_(False),
-                CareTask.title.ilike(f"%{title_fragment}%"),
+                CareTask.title.ilike(f"%{escaped}%", escape="\\"),
             )
             result = await self.db.execute(stmt)
             for task in result.scalars():
@@ -112,8 +128,8 @@ class CareCoordinatorAgent(BaseAgent):
             response_text = "\n\n".join(parts)
         else:
             response_text = await self.llm.complete(
-                system=RESPONSE_SYSTEM,
-                messages=[{"role": "user", "content": ctx.user_message}],
+                system=RESPONSE_SYSTEM + NOTHING_SAVED_NOTE,
+                messages=[*ctx.history[-4:], {"role": "user", "content": ctx.user_message}],
                 temperature=0.3,
             )
 
