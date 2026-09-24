@@ -44,5 +44,6 @@ frontend/dist/
 
 # Local dev runtime
 *.pid
+*.tsbuildinfo
 .vite/
 .claude/
