@@ -91,6 +91,51 @@ def categorise(score: float) -> str:
     return "very high"
 
 
+async def record_checkin(
+    db: AsyncSession,
+    user_id: int,
+    *,
+    sleep_hours: float,
+    stress_level: int,
+    energy_level: int,
+    self_care_minutes: int,
+    notes: str | None = None,
+) -> tuple[BurnoutCheckin, list[float]]:
+    """Score and save a check-in. Shared by the chat agent and the manual form so both
+    paths score identically, including the trend amplifier.
+
+    Returns the saved check-in and the (up to 3) prior scores, oldest first.
+    """
+    result = await db.execute(
+        select(BurnoutCheckin)
+        .where(BurnoutCheckin.user_id == user_id)
+        .order_by(BurnoutCheckin.created_at.desc())
+        .limit(3)
+    )
+    recent_trend = [c.burnout_score for c in reversed(list(result.scalars()))]
+
+    score = compute_burnout_score(
+        sleep_hours=sleep_hours,
+        stress_level=stress_level,
+        energy_level=energy_level,
+        self_care_minutes=self_care_minutes,
+        recent_trend=recent_trend,
+    )
+    checkin = BurnoutCheckin(
+        user_id=user_id,
+        sleep_hours=sleep_hours,
+        stress_level=stress_level,
+        energy_level=energy_level,
+        self_care_minutes=self_care_minutes,
+        notes=notes,
+        burnout_score=score,
+    )
+    db.add(checkin)
+    await db.commit()
+    await db.refresh(checkin)
+    return checkin, recent_trend
+
+
 class BurnoutMonitorAgent(BaseAgent):
     name = AgentName.BURNOUT_MONITOR
     description = "Runs structured burnout check-ins and tracks trend over time."
@@ -140,37 +185,16 @@ class BurnoutMonitorAgent(BaseAgent):
                 requires_followup=True,
             )
 
-        # Compute trend
-        recent_stmt = (
-            select(BurnoutCheckin)
-            .where(BurnoutCheckin.user_id == ctx.user_id)
-            .order_by(BurnoutCheckin.created_at.desc())
-            .limit(3)
-        )
-        result = await self.db.execute(recent_stmt)
-        recent = list(result.scalars())
-        recent_trend = [c.burnout_score for c in reversed(recent)]
-
-        score = compute_burnout_score(
-            sleep_hours=float(extraction["sleep_hours"]),
-            stress_level=int(extraction["stress_level"]),
-            energy_level=int(extraction["energy_level"]),
-            self_care_minutes=int(extraction["self_care_minutes"]),
-            recent_trend=recent_trend,
-        )
-
-        # Persist
-        checkin = BurnoutCheckin(
-            user_id=ctx.user_id,
+        checkin, recent_trend = await record_checkin(
+            self.db,
+            ctx.user_id,
             sleep_hours=float(extraction["sleep_hours"]),
             stress_level=int(extraction["stress_level"]),
             energy_level=int(extraction["energy_level"]),
             self_care_minutes=int(extraction["self_care_minutes"]),
             notes=extraction.get("notes"),
-            burnout_score=score,
         )
-        self.db.add(checkin)
-        await self.db.commit()
+        score = checkin.burnout_score
 
         category = categorise(score)
         prior_high = sum(1 for s in recent_trend if s >= 55)
@@ -180,7 +204,7 @@ class BurnoutMonitorAgent(BaseAgent):
             f"The caregiver just completed a burnout check-in.\n"
             f"Score: {score}/100 ({category})\n"
             f"Recent scores (oldest → newest, before this one): {recent_trend}\n"
-            f"This is check-in #{len(recent) + 1}.\n"
+            f"This is check-in #{len(recent_trend) + 1}.\n"
             f"Prior moderate-or-higher check-ins in last 3: {prior_high}\n\n"
             f"Their original message: \"{ctx.user_message}\"\n\n"
             "Write the response according to your guidelines."

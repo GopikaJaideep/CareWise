@@ -7,9 +7,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.burnout_monitor import categorise
+from app.agents.burnout_monitor import categorise, record_checkin
 from app.api.schemas import (
-    BurnoutCheckinOut, CareTaskCreate, CareTaskOut, DashboardSummary,
+    BurnoutCheckinCreate, BurnoutCheckinOut, BurnoutCheckinResult, CareTaskCreate, CareTaskOut, DashboardSummary,
     MedicationCreate, MedicationOut, PushSubscriptionCreate, SymptomLogCreate,
     SymptomLogOut, VapidPublicKeyOut,
 )
@@ -173,6 +173,27 @@ async def list_burnout(
         .limit(limit)
     )
     return list(result.scalars())
+
+
+@router.post("/burnout/checkins", response_model=BurnoutCheckinResult)
+async def create_burnout_checkin(
+    payload: BurnoutCheckinCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Manual check-in from the dashboard form. Scored exactly like a chat check-in."""
+    checkin, _ = await record_checkin(
+        db,
+        current_user.id,
+        sleep_hours=payload.sleep_hours,
+        stress_level=payload.stress_level,
+        energy_level=payload.energy_level,
+        self_care_minutes=payload.self_care_minutes,
+        notes=payload.notes,
+    )
+    return BurnoutCheckinResult.model_validate(
+        {**BurnoutCheckinOut.model_validate(checkin).model_dump(), "category": categorise(checkin.burnout_score)}
+    )
 
 
 @router.get("/push/vapid-public-key", response_model=VapidPublicKeyOut)

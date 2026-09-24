@@ -176,6 +176,14 @@ class CareTaskOut(BaseModel):
         from_attributes = True
 
 
+class BurnoutCheckinCreate(BaseModel):
+    sleep_hours: float = Field(ge=0, le=24)
+    stress_level: int = Field(ge=1, le=10)
+    energy_level: int = Field(ge=1, le=10)
+    self_care_minutes: int = Field(ge=0, le=1440)
+    notes: str | None = Field(default=None, max_length=1000)
+
+
 class BurnoutCheckinOut(BaseModel):
     id: int
     sleep_hours: float
@@ -188,6 +196,10 @@ class BurnoutCheckinOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class BurnoutCheckinResult(BurnoutCheckinOut):
+    category: str
 
 
 # --- Push notifications ---
