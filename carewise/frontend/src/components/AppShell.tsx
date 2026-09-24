@@ -118,7 +118,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        <main id="main" tabIndex={-1} className="min-h-0 flex-1 overflow-hidden focus:outline-none">
+        <main id="main" tabIndex={-1} className="relative min-h-0 flex-1 overflow-hidden focus:outline-none">
           {children}
         </main>
 

@@ -94,7 +94,7 @@ export function SymptomsPage() {
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData} margin={{ top: 8, right: 8, left: -28, bottom: 0 }}>
                   <XAxis dataKey="date" stroke="#716A62" fontSize={11} tickLine={false} axisLine={false} />
-                  <YAxis domain={[0, 10]} stroke="#716A62" fontSize={11} tickLine={false} axisLine={false} />
+                  <YAxis domain={[0, 10]} ticks={[0, 5, 10]} stroke="#716A62" fontSize={11} tickLine={false} axisLine={false} />
                   <Tooltip
                     contentStyle={{
                       borderRadius: 8,
