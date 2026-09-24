@@ -1,0 +1,80 @@
+{"id": "es-01", "message": "I'm so tired of all of this. I don't know how much longer I can keep doing it.", "expected": "emotional_support", "tags": ["core"]}
+{"id": "es-02", "message": "I snapped at Mum today and now I feel awful about it.", "expected": "emotional_support", "tags": ["core", "guilt"]}
+{"id": "es-03", "message": "Nobody asks how I'm doing. Everyone just asks about Dad.", "expected": "emotional_support", "tags": ["core"]}
+{"id": "es-04", "message": "I'm scared of what the scan results will show on Friday.", "expected": "emotional_support", "tags": ["tricky", "mentions-appointment-context"]}
+{"id": "es-05", "message": "Some days I'm angry at her for being sick, and then I hate myself for thinking that.", "expected": "emotional_support", "tags": ["core", "guilt"]}
+{"id": "es-06", "message": "I cried in the car park after the oncologist visit.", "expected": "emotional_support", "tags": ["tricky"]}
+{"id": "es-07", "message": "My sister won't help at all and I'm doing everything alone.", "expected": "emotional_support", "tags": ["core"]}
+{"id": "es-08", "message": "Honestly I just need to vent for a minute.", "expected": "emotional_support", "tags": ["core"]}
+{"id": "es-09", "message": "I feel guilty going to work while he's at home unwell.", "expected": "emotional_support", "tags": ["core", "guilt"]}
+{"id": "es-10", "message": "Thank you for listening last night, it helped.", "expected": "emotional_support", "tags": ["core"]}
+{"id": "es-11", "message": "I miss who she was before all this.", "expected": "emotional_support", "tags": ["core", "grief"]}
+{"id": "es-12", "message": "hi", "expected": "emotional_support", "tags": ["ambiguous"]}
+{"id": "es-13", "message": "I'm exhausted. Don't know how to keep going.", "expected": "emotional_support", "tags": ["tricky", "dashboard-starter"]}
+{"id": "es-14", "message": "The waiting is the worst part. Every phone call makes my heart jump.", "expected": "emotional_support", "tags": ["core"]}
+{"id": "es-15", "message": "I feel like I'm failing him.", "expected": "emotional_support", "tags": ["core"]}
+{"id": "st-01", "message": "Mum had nausea this morning, around a 6.", "expected": "symptom_tracker", "tags": ["core", "dashboard-starter"]}
+{"id": "st-02", "message": "Dad's pain was about 7 out of 10 last night.", "expected": "symptom_tracker", "tags": ["core"]}
+{"id": "st-03", "message": "She's been really fatigued today, I'd say 8.", "expected": "symptom_tracker", "tags": ["core"]}
+{"id": "st-04", "message": "Log: mouth sores, severity 4.", "expected": "symptom_tracker", "tags": ["core"]}
+{"id": "st-05", "message": "He threw up twice after dinner.", "expected": "symptom_tracker", "tags": ["core", "no-severity"]}
+{"id": "st-06", "message": "Add ondansetron 8mg, twice a day.", "expected": "symptom_tracker", "tags": ["core", "medication"]}
+{"id": "st-07", "message": "She started dexamethasone 4mg every morning.", "expected": "symptom_tracker", "tags": ["core", "medication"]}
+{"id": "st-08", "message": "What symptoms have we logged this week?", "expected": "symptom_tracker", "tags": ["core", "query"]}
+{"id": "st-09", "message": "Which medications is Mum on at the moment?", "expected": "symptom_tracker", "tags": ["core", "query", "medication"]}
+{"id": "st-10", "message": "His temperature was 38.2 this afternoon and he's shivery.", "expected": "symptom_tracker", "tags": ["core"]}
+{"id": "st-11", "message": "Diarrhoea again today, maybe a 5.", "expected": "symptom_tracker", "tags": ["core"]}
+{"id": "st-12", "message": "Her appetite is poor, she only ate a few bites, like a 6 out of 10 bad.", "expected": "symptom_tracker", "tags": ["tricky"]}
+{"id": "st-13", "message": "Has her nausea been getting worse over the last few days?", "expected": "symptom_tracker", "tags": ["query", "tricky"]}
+{"id": "st-14", "message": "Numbness in his fingers, about a 3.", "expected": "symptom_tracker", "tags": ["core"]}
+{"id": "st-15", "message": "Mum was nauseous after breakfast, about a 6.", "expected": "symptom_tracker", "tags": ["core", "landing-example"]}
+{"id": "cc-01", "message": "Remind me she has chemo on Tuesday at 10.", "expected": "care_coordinator", "tags": ["core", "shortcut"]}
+{"id": "cc-02", "message": "Add: oncology appointment Tuesday at 10am.", "expected": "care_coordinator", "tags": ["core", "shortcut", "dashboard-starter"]}
+{"id": "cc-03", "message": "Pick up his prescription from the pharmacy tomorrow.", "expected": "care_coordinator", "tags": ["core"]}
+{"id": "cc-04", "message": "What's on the care plan for today?", "expected": "care_coordinator", "tags": ["core", "query"]}
+{"id": "cc-05", "message": "I picked up the prescription, you can tick that off.", "expected": "care_coordinator", "tags": ["core", "mark-done"]}
+{"id": "cc-06", "message": "Blood test at the clinic Thursday 8:30.", "expected": "care_coordinator", "tags": ["core"]}
+{"id": "cc-07", "message": "Don't let me forget to call the palliative care nurse on Monday.", "expected": "care_coordinator", "tags": ["core"]}
+{"id": "cc-08", "message": "Book a taxi for the radiotherapy session next Wednesday.", "expected": "care_coordinator", "tags": ["core"]}
+{"id": "cc-09", "message": "What have I got coming up this week?", "expected": "care_coordinator", "tags": ["core", "query"]}
+{"id": "cc-10", "message": "Put the scan on Friday at 2pm in the plan.", "expected": "care_coordinator", "tags": ["core"]}
+{"id": "cc-11", "message": "Need to buy more nutrition shakes this weekend.", "expected": "care_coordinator", "tags": ["core", "errand"]}
+{"id": "cc-12", "message": "Her appointment got moved to Thursday at 11.", "expected": "care_coordinator", "tags": ["core", "shortcut"]}
+{"id": "cc-13", "message": "Chemo's done for today, mark it complete.", "expected": "care_coordinator", "tags": ["mark-done", "tricky"]}
+{"id": "cc-14", "message": "Remind me to give her the evening tablets at 8.", "expected": "care_coordinator", "tags": ["tricky", "medication-reminder", "shortcut"]}
+{"id": "cc-15", "message": "todo: renew the disabled parking permit", "expected": "care_coordinator", "tags": ["core", "shortcut"]}
+{"id": "rg-01", "message": "What helps with cancer-related fatigue?", "expected": "resource_guide", "tags": ["core", "resources-page"]}
+{"id": "rg-02", "message": "How can we manage nausea during chemo?", "expected": "resource_guide", "tags": ["core", "resources-page", "tricky"]}
+{"id": "rg-03", "message": "What can I do when she won't eat?", "expected": "resource_guide", "tags": ["core", "resources-page"]}
+{"id": "rg-04", "message": "What is caregiver burnout and what helps?", "expected": "resource_guide", "tags": ["core", "resources-page", "tricky", "mentions-burnout"]}
+{"id": "rg-05", "message": "How can I prepare for an oncology appointment?", "expected": "resource_guide", "tags": ["core", "resources-page", "tricky", "mentions-appointment"]}
+{"id": "rg-06", "message": "What financial support is available for carers in Australia?", "expected": "resource_guide", "tags": ["core", "resources-page"]}
+{"id": "rg-07", "message": "What questions should I ask at his next appointment?", "expected": "resource_guide", "tags": ["tricky", "mentions-appointment"]}
+{"id": "rg-08", "message": "Is it normal to lose hair two weeks after starting chemo?", "expected": "resource_guide", "tags": ["core"]}
+{"id": "rg-09", "message": "What does neutropenia mean?", "expected": "resource_guide", "tags": ["core"]}
+{"id": "rg-10", "message": "How do I get respite care so I can have a break?", "expected": "resource_guide", "tags": ["core"]}
+{"id": "rg-11", "message": "Can you explain what palliative care actually is?", "expected": "resource_guide", "tags": ["core"]}
+{"id": "rg-12", "message": "Are there support groups for carers near Melbourne?", "expected": "resource_guide", "tags": ["core"]}
+{"id": "rg-13", "message": "What's the difference between radiotherapy and chemotherapy?", "expected": "resource_guide", "tags": ["core"]}
+{"id": "rg-14", "message": "How do I talk to our kids about their grandmother's cancer?", "expected": "resource_guide", "tags": ["core"]}
+{"id": "rg-15", "message": "What are the signs of caregiver burnout?", "expected": "resource_guide", "tags": ["tricky", "mentions-burnout"]}
+{"id": "bm-01", "message": "Run a burnout check-in: 5 hours sleep, stress 8, energy 3, 0 minutes for me.", "expected": "burnout_monitor", "tags": ["core", "shortcut"]}
+{"id": "bm-02", "message": "I'd like to do a burnout check-in.", "expected": "burnout_monitor", "tags": ["core", "shortcut", "dashboard-starter"]}
+{"id": "bm-03", "message": "How am I doing lately?", "expected": "burnout_monitor", "tags": ["core", "shortcut"]}
+{"id": "bm-04", "message": "Can we do a check in on me?", "expected": "burnout_monitor", "tags": ["core"]}
+{"id": "bm-05", "message": "Slept 4 hours, stress is a 9, energy 2, no time for myself today.", "expected": "burnout_monitor", "tags": ["tricky", "no-keyword"]}
+{"id": "bm-06", "message": "Show me my wellbeing trend.", "expected": "burnout_monitor", "tags": ["core"]}
+{"id": "bm-07", "message": "Is my burnout score getting better?", "expected": "burnout_monitor", "tags": ["tricky", "question-about-self"]}
+{"id": "bm-08", "message": "Let's do my wellbeing check.", "expected": "burnout_monitor", "tags": ["core"]}
+{"id": "fu-01", "message": "6 hours, stress 7, energy 4, 20 minutes", "last_agent": "burnout_monitor", "history": [{"role": "user", "content": "I'd like to do a burnout check-in."}, {"role": "assistant", "content": "I can run a burnout check-in if you share a few quick numbers: hours of sleep, stress 1-10, energy 1-10, minutes for yourself."}], "expected": "burnout_monitor", "tags": ["follow-up"]}
+{"id": "fu-02", "message": "yes", "last_agent": "burnout_monitor", "history": [{"role": "user", "content": "How am I doing?"}, {"role": "assistant", "content": "No check-ins yet. Want to run one now? It takes about 30 seconds."}], "expected": "burnout_monitor", "tags": ["follow-up"]}
+{"id": "fu-03", "message": "About a 7", "last_agent": "symptom_tracker", "history": [{"role": "user", "content": "Mum's pain is really bad today"}, {"role": "assistant", "content": "I'm sorry she's hurting. How bad is it on a scale of 1 to 10, so I can log it?"}], "expected": "symptom_tracker", "tags": ["follow-up"]}
+{"id": "fu-04", "message": "10am", "last_agent": "care_coordinator", "history": [{"role": "user", "content": "Add her blood test on Thursday"}, {"role": "assistant", "content": "What time is the blood test on Thursday?"}], "expected": "care_coordinator", "tags": ["follow-up"]}
+{"id": "fu-05", "message": "Thanks, that's actually really comforting.", "last_agent": "resource_guide", "history": [{"role": "user", "content": "What helps with fatigue?"}, {"role": "assistant", "content": "Cancer-related fatigue is very common..."}], "expected": "emotional_support", "tags": ["follow-up", "topic-change"]}
+{"id": "fu-06", "message": "Also, she had a headache this afternoon, maybe a 4.", "last_agent": "care_coordinator", "history": [{"role": "user", "content": "Add chemo Tuesday at 10"}, {"role": "assistant", "content": "Added: Chemo on Tuesday at 10am."}], "expected": "symptom_tracker", "tags": ["follow-up", "topic-change"]}
+{"id": "mx-01", "message": "I'm worried because her nausea is worse, it's an 8 today.", "expected": "symptom_tracker", "tags": ["mixed", "tricky"]}
+{"id": "mx-02", "message": "I'm so overwhelmed, chemo is Tuesday and I haven't sorted transport.", "expected": "emotional_support", "tags": ["mixed", "tricky"]}
+{"id": "mx-03", "message": "Can you remind me what the nurse said about managing mouth sores?", "expected": "resource_guide", "tags": ["mixed", "tricky", "remind-me-not-a-task"]}
+{"id": "mx-04", "message": "Should I give her more of the anti-nausea tablets?", "expected": "resource_guide", "tags": ["mixed", "medical-boundary"]}
+{"id": "mx-05", "message": "I haven't slept properly in weeks and I'm running on empty.", "expected": "emotional_support", "tags": ["mixed", "tricky"]}
+{"id": "mx-06", "message": "How many times has she had pain this week?", "expected": "symptom_tracker", "tags": ["mixed", "query"]}

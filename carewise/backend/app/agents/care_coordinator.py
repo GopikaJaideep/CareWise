@@ -58,20 +58,28 @@ class CareCoordinatorAgent(BaseAgent):
         self.db = db
         self.system_prompt = RESPONSE_SYSTEM
 
-    async def handle(self, ctx: SessionContext) -> AgentResponse:
-        tz = resolve_timezone(ctx.metadata.get("timezone"))
-        local_now = datetime.now(timezone.utc).astimezone(tz)
+    async def extract(self, message: str, tz, now_utc: datetime | None = None) -> dict:
+        """Model step only: message -> {tasks, query, mark_done}. No database writes.
+
+        Separate from handle() so the eval suite can score extraction on its own, with a
+        fixed "now" so relative dates ("Tuesday at 10") have one right answer.
+        """
+        local_now = (now_utc or datetime.now(timezone.utc)).astimezone(tz)
         # .replace, not .format: the template contains literal JSON braces.
         system = (
             EXTRACTION_SYSTEM
             .replace("{now}", local_now.strftime("%A %Y-%m-%d %H:%M"))
             .replace("{tz}", tz_label(tz))
         )
-        extraction = await self.llm.complete_json(
+        return await self.llm.complete_json(
             system=system,
-            messages=[{"role": "user", "content": ctx.user_message}],
+            messages=[{"role": "user", "content": message}],
             schema_hint='{"tasks": [...], "query": str|null, "mark_done": [...]}',
         )
+
+    async def handle(self, ctx: SessionContext) -> AgentResponse:
+        tz = resolve_timezone(ctx.metadata.get("timezone"))
+        extraction = await self.extract(ctx.user_message, tz)
 
         added = []
         for t in extraction.get("tasks", []) or []:

@@ -72,13 +72,20 @@ class SymptomTrackerAgent(BaseAgent):
         self.db = db
         self.system_prompt = RESPONSE_SYSTEM
 
-    async def handle(self, ctx: SessionContext) -> AgentResponse:
-        # Step 1: Extract structured data
-        extraction = await self.llm.complete_json(
+    async def extract(self, message: str) -> dict:
+        """Model step only: message -> {symptoms, medications, query}. No database writes.
+
+        Separate from handle() so the eval suite can score extraction on its own.
+        """
+        return await self.llm.complete_json(
             system=EXTRACTION_SYSTEM,
-            messages=[{"role": "user", "content": ctx.user_message}],
+            messages=[{"role": "user", "content": message}],
             schema_hint='{"symptoms": [...], "medications": [...], "query": str|null, "confidence": float}',
         )
+
+    async def handle(self, ctx: SessionContext) -> AgentResponse:
+        # Step 1: Extract structured data
+        extraction = await self.extract(ctx.user_message)
 
         logged_summary = []
         # Step 2: Persist symptoms

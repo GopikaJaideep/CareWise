@@ -47,3 +47,6 @@ frontend/dist/
 *.tsbuildinfo
 .vite/
 .claude/
+
+# Eval run outputs (commit a chosen report deliberately, not every run)
+backend/evals/results/

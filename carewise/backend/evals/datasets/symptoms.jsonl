@@ -1,0 +1,23 @@
+{"id": "sx-01", "message": "Mum had nausea this morning, around a 6.", "expected": [{"symptom": ["nausea", "nauseous"], "severity": 6}]}
+{"id": "sx-02", "message": "Dad's pain was about 7 out of 10 last night.", "expected": [{"symptom": ["pain"], "severity": 7}]}
+{"id": "sx-03", "message": "She's been really fatigued today, I'd say 8.", "expected": [{"symptom": ["fatigue", "tired"], "severity": 8}]}
+{"id": "sx-04", "message": "Log: mouth sores, severity 4.", "expected": [{"symptom": ["mouth sore", "mouth ulcer", "mucositis", "sores"], "severity": 4}]}
+{"id": "sx-05", "message": "Diarrhoea again today, maybe a 5.", "expected": [{"symptom": ["diarrhoea", "diarrhea"], "severity": 5}]}
+{"id": "sx-06", "message": "Numbness in his fingers, about a 3.", "expected": [{"symptom": ["numb", "neuropathy", "tingling"], "severity": 3}]}
+{"id": "sx-07", "message": "Nausea 6 and a headache about 4 this afternoon.", "expected": [{"symptom": ["nausea"], "severity": 6}, {"symptom": ["headache", "head"], "severity": 4}]}
+{"id": "sx-08", "message": "Her pain is 8/10 right now.", "expected": [{"symptom": ["pain"], "severity": 8}]}
+{"id": "sx-09", "message": "Constipation, fairly mild, like a 2.", "expected": [{"symptom": ["constipation", "constipated"], "severity": 2}]}
+{"id": "sx-10", "message": "He's short of breath when walking, I'd call it a 6.", "expected": [{"symptom": ["breath", "breathless", "dyspnoea", "dyspnea"], "severity": 6}]}
+{"id": "sx-11", "message": "Mum's pain is really bad today.", "expected": [], "tags": ["no-number: should ask, not guess"]}
+{"id": "sx-12", "message": "He threw up twice after dinner.", "expected": [], "tags": ["no-number: should ask, not guess"]}
+{"id": "sx-13", "message": "Terrible nausea, the worst it's been.", "expected": [], "tags": ["no-number: should ask, not guess"]}
+{"id": "sx-14", "message": "What symptoms have we logged this week?", "expected": [], "query": "list_symptoms", "tags": ["query"]}
+{"id": "sx-15", "message": "Which medications is Mum on at the moment?", "expected": [], "query": "list_medications", "tags": ["query"]}
+{"id": "sx-16", "message": "Fatigue 7, appetite loss 5, nausea 3.", "expected": [{"symptom": ["fatigue", "tired"], "severity": 7}, {"symptom": ["appetite"], "severity": 5}, {"symptom": ["nausea"], "severity": 3}]}
+{"id": "sx-17", "message": "Rash on her arms, itchy, maybe a 4 out of ten.", "expected": [{"symptom": ["rash", "itch"], "severity": 4}]}
+{"id": "sx-18", "message": "I'm worried because her nausea is worse, it's an 8 today.", "expected": [{"symptom": ["nausea"], "severity": 8}]}
+{"id": "sx-19", "message": "Her pain went from a 4 this morning to a 7 tonight.", "expected": [{"symptom": ["pain"], "severity": 7}], "tags": ["latest-value"]}
+{"id": "sx-20", "message": "Sore throat, 5.", "expected": [{"symptom": ["throat"], "severity": 5}]}
+{"id": "md-01", "message": "Add ondansetron 8mg, twice a day.", "expected": [], "medications": [{"name": "ondansetron", "dosage": "8", "schedule": ["twice", "2"]}]}
+{"id": "md-02", "message": "She started dexamethasone 4mg every morning.", "expected": [], "medications": [{"name": "dexamethasone", "dosage": "4", "schedule": ["morning", "daily", "once"]}]}
+{"id": "md-03", "message": "He's now on metoclopramide 10 mg three times daily before meals.", "expected": [], "medications": [{"name": "metoclopramide", "dosage": "10", "schedule": ["three", "3", "tds"]}]}
