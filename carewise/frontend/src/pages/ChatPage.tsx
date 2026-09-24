@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Send, Loader2, Sparkles, MessageCircle, History, Plus } from "lucide-react";
-import { api, type AgentTrace, type ConversationSummary, type MessageOut } from "../lib/api";
+import { api, APIError, type AgentTrace, type ConversationSummary, type MessageOut } from "../lib/api";
 import { AgentBadge } from "../components/AgentBadge";
 import { useAuth } from "../lib/auth";
+import { usePageTitle } from "../lib/usePageTitle";
 
 interface DisplayMessage {
   id: string | number;
@@ -18,9 +20,19 @@ const SUGGESTIONS = [
   "I'm so tired today.",
   "Mum had nausea this morning, around a 6.",
   "Remind me she has chemo on Tuesday at 10.",
-  "Run a burnout check-in: 5 hours sleep, stress 8, energy 3, 0 minutes for me.",
   "What helps with cancer-related fatigue?",
 ];
+
+/** Turn a failed request into something a stressed person can act on, without technical detail. */
+function friendlyError(err: unknown): string {
+  if (err instanceof APIError) {
+    if (err.status === 401) return "Your session has ended. Please sign in again.";
+    if (err.status === 429) return "CareWise is getting a lot of messages right now. Please wait a moment and try again.";
+    if (err.status < 500 && err.message) return err.message;
+    return "CareWise had trouble replying. Your message is back in the box below, so you can try again.";
+  }
+  return "We couldn't reach CareWise. Check your connection, then try again. Your message is back in the box below.";
+}
 
 function toDisplayMessage(m: MessageOut): DisplayMessage {
   return {
@@ -33,7 +45,17 @@ function toDisplayMessage(m: MessageOut): DisplayMessage {
 }
 
 export function ChatPage() {
+  usePageTitle("Chat");
   const { user } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
+  // A prompt handed over from another page (e.g. "Ask CareWise" on Resources). Read once on mount.
+  const initialPromptRef = useRef<string | null>(
+    (location.state as { initialPrompt?: string } | null)?.initialPrompt ?? null
+  );
+  // Stays true after the prompt is consumed, so a StrictMode re-run doesn't reopen an old chat over the new one.
+  const arrivedWithPromptRef = useRef(initialPromptRef.current !== null);
+  const [historyLoading, setHistoryLoading] = useState(true);
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [input, setInput] = useState("");
   const [conversationId, setConversationId] = useState<number | null>(null);
@@ -63,15 +85,24 @@ export function ChatPage() {
     setHistoryOpen(false);
   };
 
-  // On mount: load the chat list and reopen the most recent conversation.
+  // On mount: load the chat list and reopen the most recent conversation, or, if we were
+  // sent here with a prompt, start a fresh chat with it.
   useEffect(() => {
     let cancelled = false;
+    const prompt = initialPromptRef.current;
+    if (prompt) {
+      initialPromptRef.current = null;
+      // Drop the prompt from history state so a refresh doesn't send it again.
+      navigate(location.pathname, { replace: true, state: null });
+      setHistoryLoading(false);
+      send(prompt);
+    }
     (async () => {
       try {
         const convs = await api.conversations();
         if (cancelled) return;
         setConversations(convs);
-        if (convs.length > 0) {
+        if (convs.length > 0 && !arrivedWithPromptRef.current) {
           const recent = await api.conversation(convs[0].id);
           if (cancelled) return;
           setConversationId(recent.id);
@@ -79,12 +110,15 @@ export function ChatPage() {
         }
       } catch {
         // Don't hide this: an empty chat that looks like lost history is worse than an error.
-        if (!cancelled) setError("Couldn't load your previous chats. They're saved — try refreshing.");
+        if (!cancelled) setError("Couldn't load your previous chats. They're still saved, so try refreshing the page.");
+      } finally {
+        if (!cancelled) setHistoryLoading(false);
       }
     })();
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -131,13 +165,18 @@ export function ChatPage() {
       };
       setMessages((m) => [...m, assistantMsg]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't reach CareWise. Please try again.");
+      // Take the unsent message back out of the thread and return it to the composer, so nothing
+      // the person typed is lost and it's clear it wasn't delivered.
+      setMessages((m) => m.filter((msg) => msg.id !== userMsg.id));
+      setInput(text);
+      setError(friendlyError(err));
     } finally {
       setLoading(false);
+      textareaRef.current?.focus();
     }
   };
 
-  const isEmpty = messages.length === 0;
+  const isEmpty = messages.length === 0 && !historyLoading;
 
   return (
     <div className="flex h-full flex-col bg-sand-50">
@@ -148,11 +187,11 @@ export function ChatPage() {
             aria-expanded={historyOpen}
             className="btn-ghost text-xs"
           >
-            <History className="h-3.5 w-3.5" />
-            Chat history{conversations.length > 0 ? ` (${conversations.length})` : ""}
+            <History className="h-3.5 w-3.5" aria-hidden="true" />
+            Past chats{conversations.length > 0 ? ` (${conversations.length})` : ""}
           </button>
           <button onClick={startNewChat} className="btn-ghost text-xs">
-            <Plus className="h-3.5 w-3.5" />
+            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
             New chat
           </button>
         </div>
@@ -182,28 +221,35 @@ export function ChatPage() {
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto scroll-fade">
-        <div className="mx-auto max-w-3xl px-4 py-8 md:px-6">
+        <div className="mx-auto max-w-3xl px-4 py-8 md:px-6" role="log" aria-live="polite" aria-label="Conversation">
+          {historyLoading && messages.length === 0 && (
+            <div role="status" className="flex items-center justify-center gap-2 py-16 text-sm text-ink-600">
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              Loading your chat…
+            </div>
+          )}
+
           {isEmpty && (
-            <div className="flex flex-col items-center justify-center py-16 text-center animate-fade-in">
+            <div className="flex flex-col items-center justify-center py-10 text-center animate-fade-in sm:py-16">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-sage-50 text-sage-600">
-                <MessageCircle className="h-6 w-6" />
+                <MessageCircle className="h-6 w-6" aria-hidden="true" />
               </div>
-              <h2 className="mt-6 font-serif text-3xl font-semibold tracking-tight text-ink-900">
+              <h1 className="mt-6 font-serif text-3xl font-semibold tracking-tight text-ink-900">
                 Hello{user?.display_name ? `, ${user.display_name}` : ""}.
-              </h2>
+              </h1>
               <p className="mt-3 max-w-md text-ink-600">
-                I'm here to listen, help you keep track of things, or pull up information. Whatever
-                you need right now.
+                What's on your mind? Vent, log a symptom, add an appointment, or ask a question.
               </p>
 
-              <div className="mt-10 grid w-full max-w-xl gap-2 sm:grid-cols-2">
+              <p className="mt-8 text-xs font-medium text-ink-600">Not sure where to start? Try one:</p>
+              <div className="mt-3 grid w-full max-w-xl gap-2 sm:grid-cols-2">
                 {SUGGESTIONS.map((s) => (
                   <button
                     key={s}
                     onClick={() => send(s)}
                     className="group rounded-xl border border-sand-200 bg-white p-3.5 text-left text-sm text-ink-800 shadow-soft transition-all duration-300 hover:-translate-y-0.5 hover:border-sage-300 hover:bg-sage-50/40 hover:shadow-lift active:translate-y-0 active:scale-[0.98]"
                   >
-                    <Sparkles className="mb-1.5 h-3.5 w-3.5 text-sage-600 transition-transform duration-300 group-hover:scale-125 group-hover:text-sage-700" />
+                    <Sparkles className="mb-1.5 h-3.5 w-3.5 text-sage-600 transition-transform duration-300 group-hover:scale-125 group-hover:text-sage-700" aria-hidden="true" />
                     <div>{s}</div>
                   </button>
                 ))}
@@ -216,7 +262,8 @@ export function ChatPage() {
           ))}
 
           {loading && (
-            <div className="mt-6 flex items-start gap-3 animate-fade-in">
+            <div role="status" className="mt-6 flex items-start gap-3 animate-fade-in">
+              <span className="sr-only">CareWise is replying…</span>
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sage-100 text-sage-700">
                 <Sparkles className="h-3.5 w-3.5" />
               </div>
@@ -229,7 +276,7 @@ export function ChatPage() {
           )}
 
           {error && (
-            <div className="mt-4 rounded-lg border border-clay-200 bg-clay-50 p-3 text-sm text-clay-500">
+            <div role="alert" className="mt-4 rounded-lg border border-clay-200 bg-clay-50 p-3 text-sm text-clay-500">
               {error}
             </div>
           )}
@@ -240,7 +287,11 @@ export function ChatPage() {
       <div className="border-t border-sand-200 bg-white/70 backdrop-blur-sm">
         <div className="mx-auto max-w-3xl px-4 py-4 md:px-6">
           <div className="flex items-end gap-3 rounded-2xl border border-sand-200 bg-white p-2 shadow-soft focus-within:border-sage-300 focus-within:ring-2 focus-within:ring-sage-100">
+            <label htmlFor="chat-input" className="sr-only">
+              Message CareWise
+            </label>
             <textarea
+              id="chat-input"
               ref={textareaRef}
               rows={1}
               value={input}
@@ -258,17 +309,20 @@ export function ChatPage() {
             <button
               onClick={() => send(input)}
               disabled={!input.trim() || loading}
+              aria-label="Send message"
               className="group flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sage-600 text-white shadow-soft transition-all duration-200 ease-out hover:-translate-y-0.5 hover:bg-sage-700 hover:shadow-lift disabled:pointer-events-none disabled:opacity-40 active:translate-y-0 active:scale-90 active:duration-75"
             >
               {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
               ) : (
-                <Send className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                <Send className="h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
               )}
             </button>
           </div>
-          <p className="mt-2 text-center text-xs text-ink-500">
-            CareWise is a companion, not a clinician. In a crisis, call Lifeline on 13 11 14.
+          <p className="mt-2 text-center text-xs text-ink-600">
+            Not medical advice. In an emergency call{" "}
+            <a href="tel:000" className="underline">000</a>, or Lifeline on{" "}
+            <a href="tel:131114" className="underline">13 11 14</a>.
           </p>
         </div>
       </div>
@@ -328,9 +382,20 @@ function MessageBubble({
               : "bg-white border border-sand-200 text-ink-900 shadow-soft"
           }`}
         >
-          <p className="whitespace-pre-wrap text-[15px] leading-relaxed">{message.content}</p>
+          <p className="whitespace-pre-wrap text-[15px] leading-relaxed">{renderInline(message.content)}</p>
         </div>
       </div>
     </div>
+  );
+}
+
+/** Agents reply with light markdown; render **bold** as <strong> (as React text, never raw HTML). */
+function renderInline(text: string) {
+  return text.split(/(\*\*[^*\n]+\*\*)/g).map((part, i) =>
+    part.startsWith("**") && part.endsWith("**") && part.length > 4 ? (
+      <strong key={i} className="font-semibold">{part.slice(2, -2)}</strong>
+    ) : (
+      part
+    )
   );
 }
