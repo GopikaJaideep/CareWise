@@ -5,7 +5,7 @@ import asyncio
 import json
 import logging
 import time
-from typing import Any, TypeVar
+from typing import Any, AsyncIterator, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
@@ -13,6 +13,7 @@ import httpx
 from anthropic import AsyncAnthropic, APIError
 
 from app.core.config import get_settings
+from app.core.streaming import ReplySink, current_sink
 from app.core.tracing import record_call
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,7 @@ settings = get_settings()
 T = TypeVar("T", bound=BaseModel)
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+GEMINI_STREAM_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse"
 ERROR_MESSAGE = "I'm having trouble responding right now. Could you try again in a moment?"
 RETRYABLE_STATUS = {429, 500, 503}
 GEMINI_MAX_ATTEMPTS = 3
@@ -121,16 +123,30 @@ class LLMClient:
         max_tokens: int | None = None,
         temperature: float | None = None,
         json_mode: bool = False,
+        stream: bool = False,
     ) -> str:
-        """Plain text completion."""
+        """Plain text completion.
+
+        stream=True marks text a person will read. If the current request is streaming (a ReplySink
+        is open, see app/core/streaming.py), chunks are passed to it as they arrive; the full text is
+        still returned, so callers don't change. Never used for JSON (routing, extraction).
+        """
+        sink = current_sink() if stream and not json_mode else None
         if self.provider is None:
-            return self._fallback_response(messages)
+            text = self._fallback_response(messages)
+            if sink is not None:
+                sink.start()
+                sink.feed(text)
+                sink.end()
+            return text
 
         max_tokens = max_tokens or settings.llm_max_tokens
         temperature = temperature if temperature is not None else settings.llm_temperature
 
         start = time.perf_counter()
-        if self.provider == "gemini":
+        if sink is not None:
+            text, usage, ok = await self._complete_streamed(sink, system, messages, max_tokens, temperature)
+        elif self.provider == "gemini":
             text, usage, ok = await self._complete_gemini(system, messages, max_tokens, temperature, json_mode)
         else:
             text, usage, ok = await self._complete_anthropic(system, messages, max_tokens, temperature)
@@ -196,6 +212,79 @@ class LLMClient:
             # Still return the partial reply, but make truncation visible in the logs.
             logger.warning("Gemini reply hit maxOutputTokens and was cut off (usage=%s)", data.get("usageMetadata"))
         return text, usage, True
+
+    async def _complete_streamed(
+        self, sink: ReplySink, system: str, messages: list[dict[str, str]], max_tokens: int, temperature: float
+    ) -> tuple[str, dict[str, Any], bool]:
+        """Stream into the sink. If streaming fails before any text arrives (unsupported, rate
+        limited, network), fall back to a normal request, so a streaming problem costs speed,
+        never the reply."""
+        sink.start()
+        parts: list[str] = []
+        usage: dict[str, Any] = {}
+        chunks = (
+            self._stream_gemini(system, messages, max_tokens, temperature)
+            if self.provider == "gemini"
+            else self._stream_anthropic(system, messages, max_tokens, temperature)
+        )
+        try:
+            async for text, chunk_usage in chunks:
+                if text:
+                    parts.append(text)
+                    sink.feed(text)
+                if chunk_usage:
+                    usage = chunk_usage
+        except Exception as e:  # noqa: BLE001 - any failure here has the same safe outcome
+            if not parts:
+                logger.warning("Streaming unavailable (%s); using a normal request", type(e).__name__)
+                if self.provider == "gemini":
+                    text, usage, ok = await self._complete_gemini(system, messages, max_tokens, temperature, False)
+                else:
+                    text, usage, ok = await self._complete_anthropic(system, messages, max_tokens, temperature)
+                if ok:
+                    sink.feed(text)
+                sink.end()
+                return text, usage, ok
+            logger.error("Stream broke off after partial text: %s", e)
+            sink.end()
+            return ERROR_MESSAGE, usage, False
+        sink.end()
+        text = "".join(parts)
+        return (text, usage, True) if text else (ERROR_MESSAGE, usage, False)
+
+    async def _stream_gemini(
+        self, system: str, messages: list[dict[str, str]], max_tokens: int, temperature: float
+    ) -> AsyncIterator[tuple[str, dict[str, Any] | None]]:
+        payload = build_gemini_payload(system, messages, max_tokens, temperature, False, self.model)
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            async with client.stream(
+                "POST", GEMINI_STREAM_URL.format(model=self.model), json=payload,
+                headers={"x-goog-api-key": self.api_key},
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    data = json.loads(line[5:].strip())
+                    meta = data.get("usageMetadata")
+                    usage = {
+                        "input_tokens": meta.get("promptTokenCount"),
+                        "output_tokens": meta.get("candidatesTokenCount"),
+                        "thinking_tokens": meta.get("thoughtsTokenCount"),
+                    } if meta else None
+                    yield parse_gemini_text(data) or "", usage
+
+    async def _stream_anthropic(
+        self, system: str, messages: list[dict[str, str]], max_tokens: int, temperature: float
+    ) -> AsyncIterator[tuple[str, dict[str, Any] | None]]:
+        assert self.client is not None
+        async with self.client.messages.stream(
+            model=self.model, system=system, messages=messages, max_tokens=max_tokens, temperature=temperature,
+        ) as stream:
+            async for text in stream.text_stream:
+                yield text, None
+            final = await stream.get_final_message()
+            yield "", {"input_tokens": final.usage.input_tokens, "output_tokens": final.usage.output_tokens}
 
     async def _gemini_request(self, payload: dict[str, Any]) -> dict[str, Any]:
         url = GEMINI_URL.format(model=self.model)

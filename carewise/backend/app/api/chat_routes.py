@@ -1,10 +1,12 @@
 """Chat API — primary entry point that drives the orchestrator."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -15,8 +17,9 @@ from app.api.schemas import (
     AgentTrace, ChatRequest, ChatResponse, ConversationOut, ConversationSummary, MessageOut,
 )
 from app.core.auth import get_current_user
-from app.core.database import get_db
+from app.core.database import get_db, get_session_factory
 from app.core.safety import redact_pii, validate_response
+from app.core.streaming import ReplySink, open_sink
 from app.core.tracing import start_trace
 from app.models.db import BurnoutCheckin, Conversation, Message, User
 
@@ -30,6 +33,72 @@ async def chat(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ChatResponse:
+    return await run_chat_turn(payload, current_user, db)
+
+
+# Chat turns still running after their stream's client went away; kept so they finish and save.
+_background_turns: set[asyncio.Task] = set()
+
+
+def _sse(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+@router.post("/stream")
+async def chat_stream(
+    payload: ChatRequest,
+    current_user: User = Depends(get_current_user),
+    sessions=Depends(get_session_factory),
+) -> StreamingResponse:
+    """The same chat turn as POST /api/chat, sent as server-sent events while it's written.
+
+    Events: "delta" {text} (a preview, released sentence by sentence after the safety filter),
+    "blocked" (the filter stopped the preview), then "done" (the final ChatResponse, which the app
+    shows and which is saved) or "error" {status, detail}. If the client disconnects, the turn
+    still finishes and is saved.
+    """
+    user_id = current_user.id
+    sink = ReplySink()
+
+    async def turn() -> ChatResponse:
+        open_sink(sink)  # only this task's context: other requests are unaffected
+        try:
+            # Its own session: a streaming response outlives request-scoped dependencies.
+            async with sessions() as db:
+                user = await db.get(User, user_id)
+                return await run_chat_turn(payload, user, db)
+        finally:
+            sink.queue.put_nowait(None)
+
+    task = asyncio.create_task(turn())
+    _background_turns.add(task)
+    task.add_done_callback(_background_turns.discard)
+
+    async def events():
+        while (item := await sink.queue.get()) is not None:
+            kind, text = item
+            yield _sse(kind, {"text": text} if kind == "delta" else {"reason": text})
+        try:
+            result = await task
+        except HTTPException as e:
+            yield _sse("error", {"status": e.status_code, "detail": e.detail})
+            return
+        except Exception:
+            logger.exception("Streamed chat turn failed")
+            yield _sse("error", {"status": 500, "detail": "Something went wrong writing a reply."})
+            return
+        yield _sse("done", result.model_dump(mode="json"))
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        # No caching, and no proxy buffering (nginx honours X-Accel-Buffering), or nothing streams.
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+async def run_chat_turn(payload: ChatRequest, current_user: User, db: AsyncSession) -> ChatResponse:
+    """One chat turn: save the message, run the agents, filter and save the reply."""
     # Get or create conversation
     if payload.conversation_id:
         result = await db.execute(

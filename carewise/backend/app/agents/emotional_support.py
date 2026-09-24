@@ -66,7 +66,7 @@ class EmotionalSupportAgent(BaseAgent):
             )
 
         messages = list(ctx.history) + [{"role": "user", "content": ctx.user_message}]
-        text = await self.llm.complete(system=system, messages=messages, temperature=0.75)
+        text = await self.llm.complete(system=system, messages=messages, temperature=0.75, stream=True)
 
         handoff = None
         if "[HANDOFF: safety]" in text:

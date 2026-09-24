@@ -89,6 +89,7 @@ class ResourceGuideAgent(BaseAgent):
                 system=self.system_prompt.format(sources=format_sources(hits)),
                 messages=[{"role": "user", "content": ctx.user_message}],
                 temperature=0.3,
+                stream=True,
             )
         return AgentResponse(
             agent=self.name,

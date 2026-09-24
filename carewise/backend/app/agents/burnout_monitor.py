@@ -216,6 +216,7 @@ class BurnoutMonitorAgent(BaseAgent):
             system=RESPONSE_SYSTEM,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.5,
+            stream=True,
         )
 
         return AgentResponse(
