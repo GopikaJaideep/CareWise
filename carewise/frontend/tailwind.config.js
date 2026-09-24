@@ -37,7 +37,7 @@ export default {
           800: "#2E2820",
           700: "#48413A",
           600: "#6E6760",
-          500: "#928B83",
+          500: "#716A62", // darkened from #928B83 to meet WCAG AA (4.5:1) for small text
         },
       },
       fontFamily: {
