@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { BookOpen, ExternalLink, ArrowRight } from "lucide-react";
+import { usePageTitle } from "../lib/usePageTitle";
 
 const RESOURCES = [
   {
@@ -67,17 +68,18 @@ const ORGANISATIONS = [
 ];
 
 export function ResourcesPage() {
+  usePageTitle("Resources");
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-3xl px-4 py-8 md:px-6">
         <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sage-50 text-sage-600">
-            <BookOpen className="h-5 w-5" />
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-sage-50 text-sage-600">
+            <BookOpen className="h-5 w-5" aria-hidden="true" />
           </div>
           <div>
             <h1 className="font-serif text-3xl font-semibold tracking-tight">Resources</h1>
             <p className="mt-1 text-sm text-ink-600">
-              Plain-language information from vetted sources. Tap any topic to ask CareWise about it.
+              Plain-language answers from trusted sources. Tap a topic to ask CareWise.
             </p>
           </div>
         </div>
@@ -98,7 +100,7 @@ export function ResourcesPage() {
                   <div className="font-medium text-ink-900">{item.title}</div>
                   <div className="mt-1 flex items-center gap-1 text-xs text-sage-700">
                     Ask CareWise
-                    <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
+                    <ArrowRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
                   </div>
                 </Link>
               ))}
@@ -124,7 +126,8 @@ export function ResourcesPage() {
                     <div className="font-medium text-ink-900">{org.name}</div>
                     <div className="mt-0.5 text-sm text-ink-700">{org.description}</div>
                   </div>
-                  <ExternalLink className="h-4 w-4 shrink-0 text-ink-500" />
+                  <ExternalLink className="h-4 w-4 shrink-0 text-ink-500" aria-hidden="true" />
+                  <span className="sr-only">(opens in a new tab)</span>
                 </div>
               </a>
             ))}
@@ -132,9 +135,9 @@ export function ResourcesPage() {
         </section>
 
         <div className="mt-12 rounded-xl bg-clay-50 border border-clay-200 p-4 text-sm text-ink-800">
-          <strong className="text-clay-500">Important:</strong> CareWise provides general information,
-          not medical advice. Your treatment team knows the specific situation best — always check
-          significant decisions with them.
+          <strong className="text-clay-500">Important:</strong> CareWise gives general information,
+          not medical advice. The treatment team knows your situation best, so check big decisions
+          with them.
         </div>
       </div>
     </div>

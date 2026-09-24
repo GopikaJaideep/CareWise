@@ -10,6 +10,7 @@ import { ChatPage } from "./pages/ChatPage";
 import { TasksPage } from "./pages/TasksPage";
 import { SymptomsPage } from "./pages/SymptomsPage";
 import { ResourcesPage } from "./pages/ResourcesPage";
+import { NotFoundPage } from "./pages/NotFoundPage";
 import { AppShell } from "./components/AppShell";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -18,13 +19,20 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-sand-50">
-        <Loader2 className="h-6 w-6 animate-spin text-ink-500" />
+      <div role="status" className="flex min-h-screen items-center justify-center bg-sand-50">
+        <Loader2 className="h-6 w-6 animate-spin text-ink-500" aria-hidden="true" />
+        <span className="sr-only">Loading…</span>
       </div>
     );
   }
   if (!user) {
-    return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+    return (
+      <Navigate
+        to="/login"
+        state={{ from: location.pathname + location.search + location.hash }}
+        replace
+      />
+    );
   }
   return <AppShell>{children}</AppShell>;
 }
@@ -33,8 +41,9 @@ function PublicOnlyRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-sand-50">
-        <Loader2 className="h-6 w-6 animate-spin text-ink-500" />
+      <div role="status" className="flex min-h-screen items-center justify-center bg-sand-50">
+        <Loader2 className="h-6 w-6 animate-spin text-ink-500" aria-hidden="true" />
+        <span className="sr-only">Loading…</span>
       </div>
     );
   }
@@ -105,7 +114,7 @@ export default function App() {
             </ProtectedRoute>
           }
         />
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </AuthProvider>
   );

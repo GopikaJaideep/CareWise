@@ -1,22 +1,30 @@
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { Heart, ArrowRight, Loader2, MailCheck } from "lucide-react";
-import { api } from "../lib/api";
+import { api, APIError } from "../lib/api";
+import { usePageTitle } from "../lib/usePageTitle";
 
 export function ForgotPasswordPage() {
+  usePageTitle("Reset your password");
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setError(null);
     try {
       await api.forgotPassword(email);
-    } finally {
-      // Always show the same confirmation, whether or not the email exists —
-      // this page never reveals which emails are registered.
       setSent(true);
+    } catch (err) {
+      // Always show the same confirmation whether or not the email exists, so this page never
+      // reveals which emails are registered. But if the request never got through (network
+      // failure or server error), say so rather than claiming an email was sent.
+      if (err instanceof APIError && err.status < 500) setSent(true);
+      else setError("We couldn't send the email just now. Please check your connection and try again.");
+    } finally {
       setLoading(false);
     }
   };
@@ -33,7 +41,7 @@ export function ForgotPasswordPage() {
 
         {sent ? (
           <div className="card text-center">
-            <MailCheck className="mx-auto h-8 w-8 text-sage-600" />
+            <MailCheck className="mx-auto h-8 w-8 text-sage-600" aria-hidden="true" />
             <h1 className="mt-3 font-serif text-2xl font-semibold text-ink-900">Check your email</h1>
             <p className="mt-2 text-sm text-ink-600">
               If an account exists for <strong>{email}</strong>, we've sent a link to reset your
@@ -54,8 +62,10 @@ export function ForgotPasswordPage() {
 
             <form onSubmit={handleSubmit} className="mt-8 space-y-4">
               <div>
-                <label className="mb-1 block text-sm font-medium text-ink-800">Email</label>
+                <label htmlFor="email" className="mb-1 block text-sm font-medium text-ink-800">Email</label>
                 <input
+                  id="email"
+                  autoComplete="email"
                   autoFocus
                   required
                   type="email"
@@ -65,6 +75,12 @@ export function ForgotPasswordPage() {
                   placeholder="you@example.com"
                 />
               </div>
+
+              {error && (
+                <div role="alert" className="rounded-lg border border-clay-200 bg-clay-50 p-3 text-sm text-clay-500">
+                  {error}
+                </div>
+              )}
 
               <button type="submit" disabled={loading} className="btn-primary w-full">
                 {loading ? (

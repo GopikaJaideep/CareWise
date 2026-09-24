@@ -5,30 +5,72 @@ import {
 } from "recharts";
 import {
   Activity, Calendar, Battery, Pill, ArrowRight, Loader2, MessageCircle,
-  BellRing, BellOff, Sparkles,
+  BellRing, BellOff, Sparkles, RefreshCw,
 } from "lucide-react";
 import { api, type DashboardSummary } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { disablePushReminders, enablePushReminders, pushPermission } from "../lib/push";
 import { AnimatedNumber } from "../components/AnimatedNumber";
+import { usePageTitle } from "../lib/usePageTitle";
+
+const STARTERS = [
+  "Mum had nausea this morning, around a 6.",
+  "Add: oncology appointment Tuesday at 10am.",
+  "I'm exhausted. Don't know how to keep going.",
+  "I'd like to do a burnout check-in.",
+];
 
 export function DashboardPage() {
+  usePageTitle("Home");
   const { user } = useAuth();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
 
-  useEffect(() => {
-    api.dashboard().then(setSummary).finally(() => setLoading(false));
-  }, []);
+  const load = () => {
+    setLoading(true);
+    setFailed(false);
+    api
+      .dashboard()
+      .then(setSummary)
+      .catch(() => setFailed(true))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(load, []);
 
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-ink-500" />
+      <div role="status" className="flex h-full items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-ink-500" aria-hidden="true" />
+        <span className="sr-only">Loading your dashboard…</span>
       </div>
     );
   }
-  if (!summary) return null;
+  if (failed || !summary) {
+    return (
+      <div className="flex h-full items-center justify-center px-6">
+        <div role="alert" className="max-w-sm text-center">
+          <h1 className="font-serif text-2xl font-semibold text-ink-900">We couldn't load your dashboard</h1>
+          <p className="mt-2 text-sm text-ink-600">
+            Your information is safe. This is usually a connection hiccup.
+          </p>
+          <div className="mt-6 flex flex-wrap justify-center gap-2">
+            <button onClick={load} className="btn-primary">
+              <RefreshCw className="h-4 w-4" aria-hidden="true" /> Try again
+            </button>
+            <Link to="/app/chat" className="btn-ghost">Go to chat</Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const isNewUser =
+    summary.recent_symptom_count === 0 &&
+    summary.open_tasks_count === 0 &&
+    summary.active_medications === 0 &&
+    summary.latest_burnout_score === null;
 
   const greeting = getGreeting();
   const trendData = summary.burnout_trend.map((score, i) => ({
@@ -42,33 +84,63 @@ export function DashboardPage() {
       : summary.burnout_category === "high"
       ? "text-clay-500"
       : summary.burnout_category === "moderate"
-      ? "text-sand-500"
+      ? "text-clay-400"
       : "text-sage-600";
 
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-5xl px-4 py-8 md:px-6">
-        <div className="flex items-baseline justify-between">
+        <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="text-sm text-ink-600">{greeting}</p>
             <h1 className="mt-1 font-serif text-3xl font-semibold tracking-tight text-ink-900">
               {user?.display_name ? `Hi, ${user.display_name}` : "Hi"}
             </h1>
           </div>
-          <Link to="/app/chat" className="btn-primary">
-            <MessageCircle className="h-4 w-4" />
-            Talk to CareWise
-          </Link>
+          {!isNewUser && (
+            <Link to="/app/chat" className="btn-primary">
+              <MessageCircle className="h-4 w-4" aria-hidden="true" />
+              Talk to CareWise
+            </Link>
+          )}
         </div>
 
+        {isNewUser && (
+          <section className="card mt-6 border-sage-200" aria-labelledby="start-heading">
+            <h2 id="start-heading" className="font-serif text-xl font-semibold text-ink-900">
+              Start here: tell CareWise what's going on
+            </h2>
+            <p className="mt-1 text-sm text-ink-600">
+              Just type like you'd text a friend. CareWise files symptoms, appointments and meds for
+              you. Tap an example to try it:
+            </p>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              {STARTERS.map((s) => (
+                <Link
+                  key={s}
+                  to="/app/chat"
+                  state={{ initialPrompt: s }}
+                  className="rounded-lg border border-sand-200 bg-sand-50 p-3 text-sm text-ink-800 transition-colors hover:border-sage-300 hover:bg-white"
+                >
+                  "{s}"
+                </Link>
+              ))}
+            </div>
+            <Link to="/app/chat" className="btn-primary mt-5 w-full sm:w-auto">
+              <MessageCircle className="h-4 w-4" aria-hidden="true" />
+              Or write your own message
+            </Link>
+          </section>
+        )}
+
         <div className="mt-6 flex items-start gap-3 rounded-xl border border-sage-200 bg-sage-50 p-4">
-          <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-sage-600" />
+          <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-sage-600" aria-hidden="true" />
           <p className="text-sm italic text-ink-800">"{summary.quote_of_the_day}"</p>
         </div>
 
         <ReminderToggle />
 
-        <div className="mt-8 grid gap-4 md:grid-cols-3">
+        <div className="mt-8 grid gap-3 sm:grid-cols-3 sm:gap-4">
           <StatCard
             label="Open tasks"
             value={summary.open_tasks_count}
@@ -94,14 +166,14 @@ export function DashboardPage() {
 
         {/* Burnout */}
         <div className="card mt-6">
-          <div className="flex items-start justify-between">
+          <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sage-50 text-sage-600">
-                <Battery className="h-5 w-5" />
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-sage-50 text-sage-600">
+                <Battery className="h-5 w-5" aria-hidden="true" />
               </div>
               <div>
                 <h2 className="font-serif text-xl font-semibold text-ink-900">Your wellbeing</h2>
-                <p className="text-sm text-ink-600">Burnout check-in trend</p>
+                <p className="text-sm text-ink-600">How you've been doing, from your check-ins</p>
               </div>
             </div>
             {summary.latest_burnout_score !== null ? (
@@ -112,18 +184,22 @@ export function DashboardPage() {
                 <div className="text-xs text-ink-600">/ 100 — {summary.burnout_category}</div>
               </div>
             ) : (
-              <Link to="/app/chat" className="btn-ghost">
-                Run a check-in <ArrowRight className="h-3.5 w-3.5" />
+              <Link
+                to="/app/chat"
+                state={{ initialPrompt: "I'd like to do a burnout check-in." }}
+                className="btn-ghost shrink-0"
+              >
+                Check in <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
               </Link>
             )}
           </div>
 
           {trendData.length > 1 ? (
-            <div className="mt-6 h-32">
+            <div className="mt-6 h-32" role="img" aria-label={`Burnout scores from your last ${trendData.length} check-ins, most recent ${Math.round(summary.latest_burnout_score ?? 0)} out of 100`}>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <XAxis dataKey="name" stroke="#928B83" fontSize={11} tickLine={false} axisLine={false} />
-                  <YAxis domain={[0, 100]} stroke="#928B83" fontSize={11} tickLine={false} axisLine={false} />
+                  <XAxis dataKey="name" stroke="#716A62" fontSize={11} tickLine={false} axisLine={false} />
+                  <YAxis domain={[0, 100]} stroke="#716A62" fontSize={11} tickLine={false} axisLine={false} />
                   <ReferenceLine y={55} stroke="#D29A82" strokeDasharray="3 3" label={{ value: "high", fontSize: 10, fill: "#965340" }} />
                   <ReferenceLine y={75} stroke="#B8755A" strokeDasharray="3 3" />
                   <Tooltip
@@ -151,7 +227,7 @@ export function DashboardPage() {
             </p>
           ) : (
             <p className="mt-6 text-sm text-ink-600">
-              No check-ins yet. Tell CareWise about your sleep, stress, energy, and self-care to start tracking.
+              No check-ins yet. It takes 30 seconds: a few questions about your sleep, stress and energy.
             </p>
           )}
 
@@ -165,33 +241,6 @@ export function DashboardPage() {
             )}
         </div>
 
-        {/* Quick start prompts */}
-        {summary.recent_symptom_count === 0 &&
-          summary.open_tasks_count === 0 &&
-          summary.latest_burnout_score === null && (
-            <div className="card mt-6">
-              <h3 className="font-serif text-lg font-semibold text-ink-900">Try saying</h3>
-              <p className="mt-1 text-sm text-ink-600">
-                CareWise understands plain language. Here are a few starters.
-              </p>
-              <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                {[
-                  "Mum had nausea this morning, around a 6.",
-                  "Add: oncology appointment Tuesday at 10am.",
-                  "I'm exhausted. Don't know how to keep going.",
-                  "Run a burnout check-in.",
-                ].map((s) => (
-                  <Link
-                    key={s}
-                    to="/app/chat"
-                    className="rounded-lg border border-sand-200 bg-sand-50 p-3 text-sm text-ink-800 hover:bg-white"
-                  >
-                    "{s}"
-                  </Link>
-                ))}
-              </div>
-            </div>
-          )}
       </div>
     </div>
   );
@@ -202,6 +251,7 @@ function ReminderToggle() {
     "loading"
   );
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const perm = pushPermission();
@@ -215,9 +265,15 @@ function ReminderToggle() {
 
   const handleEnable = async () => {
     setBusy(true);
+    setError(null);
     try {
       const result = await enablePushReminders();
       setStatus(result.ok ? "on" : result.reason === "denied" ? "denied" : "off");
+      if (!result.ok && result.reason === "no_server_key") {
+        setError("Reminders aren't set up on this server yet.");
+      }
+    } catch {
+      setError("Couldn't turn on reminders. Please try again.");
     } finally {
       setBusy(false);
     }
@@ -225,21 +281,24 @@ function ReminderToggle() {
 
   const handleDisable = async () => {
     setBusy(true);
+    setError(null);
     try {
       await disablePushReminders();
       setStatus("off");
+    } catch {
+      setError("Couldn't turn off reminders. Please try again.");
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div className="mt-3 flex items-center justify-between rounded-xl border border-sand-200 bg-white p-3.5 shadow-soft">
-      <div className="flex items-center gap-3">
+    <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sand-200 bg-white p-3.5 shadow-soft">
+      <div className="flex min-w-0 flex-1 items-center gap-3">
         {status === "on" ? (
-          <BellRing className="h-4 w-4 text-sage-600" />
+          <BellRing className="h-4 w-4 shrink-0 text-sage-600" aria-hidden="true" />
         ) : (
-          <BellOff className="h-4 w-4 text-ink-500" />
+          <BellOff className="h-4 w-4 shrink-0 text-ink-500" aria-hidden="true" />
         )}
         <div>
           <div className="text-sm font-medium text-ink-900">
@@ -247,18 +306,23 @@ function ReminderToggle() {
           </div>
           <div className="text-xs text-ink-500">
             {status === "denied"
-              ? "Notifications are blocked in your browser settings."
-              : "A gentle morning quote, plus a heads-up 5 minutes before appointments."}
+              ? "Notifications are blocked. You can allow them in your browser's site settings."
+              : "A morning note, plus a heads-up 5 minutes before appointments."}
           </div>
+          {error && (
+            <div role="alert" className="mt-1 text-xs text-clay-500">
+              {error}
+            </div>
+          )}
         </div>
       </div>
       {status === "denied" ? null : status === "on" ? (
         <button onClick={handleDisable} disabled={busy} className="btn-ghost text-xs">
-          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Turn off"}
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-label="Working…" /> : "Turn off"}
         </button>
       ) : (
         <button onClick={handleEnable} disabled={busy} className="btn-primary text-xs">
-          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Enable reminders"}
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-label="Working…" /> : "Turn on reminders"}
         </button>
       )}
     </div>
@@ -281,13 +345,13 @@ function StatCard({
   return (
     <Link
       to={href}
-      className="card group transition-all duration-300 hover:-translate-y-1 hover:border-sage-300 hover:shadow-lift"
+      className="card group p-4 transition-all duration-300 hover:-translate-y-1 hover:border-sage-300 hover:shadow-lift sm:p-6"
     >
       <div className="flex items-start justify-between">
         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sage-50 text-sage-600 transition-all duration-300 group-hover:scale-110 group-hover:bg-sage-100">
-          <Icon className="h-4 w-4" />
+          <Icon className="h-4 w-4" aria-hidden="true" />
         </div>
-        <ArrowRight className="h-4 w-4 -translate-x-1 text-ink-500 opacity-0 transition-all duration-300 group-hover:translate-x-0 group-hover:opacity-100" />
+        <ArrowRight className="h-4 w-4 -translate-x-1 text-ink-500 opacity-0 transition-all duration-300 group-hover:translate-x-0 group-hover:opacity-100" aria-hidden="true" />
       </div>
       <div className="mt-3 font-serif text-3xl font-semibold tabular-nums text-ink-900">
         {typeof value === "number" ? <AnimatedNumber value={value} /> : value}

@@ -2,8 +2,10 @@ import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Heart, ArrowRight, Loader2, CheckCircle2 } from "lucide-react";
 import { api, APIError } from "../lib/api";
+import { usePageTitle } from "../lib/usePageTitle";
 
 export function ResetPasswordPage() {
+  usePageTitle("Set a new password");
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const token = searchParams.get("token") ?? "";
@@ -56,8 +58,8 @@ export function ResetPasswordPage() {
             </Link>
           </div>
         ) : done ? (
-          <div className="card text-center">
-            <CheckCircle2 className="mx-auto h-8 w-8 text-sage-600" />
+          <div role="status" className="card text-center">
+            <CheckCircle2 className="mx-auto h-8 w-8 text-sage-600" aria-hidden="true" />
             <h1 className="mt-3 font-serif text-2xl font-semibold text-ink-900">Password updated</h1>
             <p className="mt-2 text-sm text-ink-600">Taking you to sign in…</p>
           </div>
@@ -70,8 +72,10 @@ export function ResetPasswordPage() {
 
             <form onSubmit={handleSubmit} className="mt-8 space-y-4">
               <div>
-                <label className="mb-1 block text-sm font-medium text-ink-800">New password</label>
+                <label htmlFor="new-password" className="mb-1 block text-sm font-medium text-ink-800">New password</label>
                 <input
+                  id="new-password"
+                  autoComplete="new-password"
                   autoFocus
                   required
                   type="password"
@@ -84,8 +88,10 @@ export function ResetPasswordPage() {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium text-ink-800">Confirm password</label>
+                <label htmlFor="confirm-password" className="mb-1 block text-sm font-medium text-ink-800">Confirm password</label>
                 <input
+                  id="confirm-password"
+                  autoComplete="new-password"
                   required
                   type="password"
                   minLength={8}
@@ -97,7 +103,7 @@ export function ResetPasswordPage() {
               </div>
 
               {error && (
-                <div className="rounded-lg bg-clay-50 p-3 text-sm text-clay-500 border border-clay-200">
+                <div role="alert" className="rounded-lg bg-clay-50 p-3 text-sm text-clay-500 border border-clay-200">
                   {error}
                 </div>
               )}

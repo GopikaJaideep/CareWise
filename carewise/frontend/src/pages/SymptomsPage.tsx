@@ -1,12 +1,16 @@
 import { useEffect, useState } from "react";
-import { Activity, Pill, Loader2, Plus, X } from "lucide-react";
+import { Activity, Pill, Loader2, Plus, X, RefreshCw } from "lucide-react";
 import { BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip } from "recharts";
 import { api, type Medication, type SymptomLog } from "../lib/api";
+import { usePageTitle } from "../lib/usePageTitle";
 
 export function SymptomsPage() {
+  usePageTitle("Symptoms & medications");
   const [symptoms, setSymptoms] = useState<SymptomLog[]>([]);
   const [meds, setMeds] = useState<Medication[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [showSymptomForm, setShowSymptomForm] = useState(false);
   const [showMedForm, setShowMedForm] = useState(false);
 
@@ -16,19 +20,46 @@ export function SymptomsPage() {
     setMeds(m);
   };
 
-  useEffect(() => {
-    load().finally(() => setLoading(false));
-  }, []);
+  const initialLoad = () => {
+    setLoading(true);
+    setLoadFailed(false);
+    load()
+      .catch(() => setLoadFailed(true))
+      .finally(() => setLoading(false));
+  };
 
-  const handleDeactivateMed = async (id: number) => {
-    await api.deactivateMedication(id);
-    setMeds((ms) => ms.filter((m) => m.id !== id));
+  useEffect(initialLoad, []);
+
+  const handleDeactivateMed = async (med: Medication) => {
+    if (!window.confirm(`Stop tracking ${med.name}? It will be removed from this list.`)) return;
+    setActionError(null);
+    try {
+      await api.deactivateMedication(med.id);
+      setMeds((ms) => ms.filter((m) => m.id !== med.id));
+    } catch {
+      setActionError(`Couldn't remove ${med.name}. Please try again.`);
+    }
   };
 
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-ink-500" />
+      <div role="status" className="flex h-full items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-ink-500" aria-hidden="true" />
+        <span className="sr-only">Loading symptoms and medications…</span>
+      </div>
+    );
+  }
+
+  if (loadFailed) {
+    return (
+      <div className="flex h-full items-center justify-center px-6">
+        <div role="alert" className="max-w-sm text-center">
+          <h1 className="font-serif text-2xl font-semibold text-ink-900">We couldn't load this page</h1>
+          <p className="mt-2 text-sm text-ink-600">Your records are safe. Check your connection and try again.</p>
+          <button onClick={initialLoad} className="btn-primary mt-6">
+            <RefreshCw className="h-4 w-4" aria-hidden="true" /> Try again
+          </button>
+        </div>
       </div>
     );
   }
@@ -41,19 +72,29 @@ export function SymptomsPage() {
       <div className="mx-auto max-w-3xl px-4 py-8 md:px-6">
         <h1 className="font-serif text-3xl font-semibold tracking-tight">Symptoms & medications</h1>
         <p className="mt-1 text-sm text-ink-600">
-          Log directly below, or tell CareWise in chat — either way it shows up here for the care team to see.
+          Log them here or just mention them in chat. Either way they're saved here, handy for appointments.
         </p>
+
+        {actionError && (
+          <div role="alert" className="mt-4 rounded-lg border border-clay-200 bg-clay-50 p-3 text-sm text-clay-500">
+            {actionError}
+          </div>
+        )}
 
         {/* Severity chart */}
         {chartData.length > 0 && (
           <div className="card mt-6">
             <h2 className="font-serif text-lg font-semibold text-ink-900">Last 14 days</h2>
             <p className="text-xs text-ink-500">Average daily severity (1–10)</p>
-            <div className="mt-4 h-48">
+            <div
+              className="mt-4 h-48"
+              role="img"
+              aria-label={`Average daily symptom severity over ${chartData.length} day${chartData.length === 1 ? "" : "s"}, on a scale of 1 to 10`}
+            >
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData} margin={{ top: 8, right: 8, left: -28, bottom: 0 }}>
-                  <XAxis dataKey="date" stroke="#928B83" fontSize={11} tickLine={false} axisLine={false} />
-                  <YAxis domain={[0, 10]} stroke="#928B83" fontSize={11} tickLine={false} axisLine={false} />
+                  <XAxis dataKey="date" stroke="#716A62" fontSize={11} tickLine={false} axisLine={false} />
+                  <YAxis domain={[0, 10]} stroke="#716A62" fontSize={11} tickLine={false} axisLine={false} />
                   <Tooltip
                     contentStyle={{
                       borderRadius: 8,
@@ -72,11 +113,11 @@ export function SymptomsPage() {
         <div className="mt-6">
           <div className="mb-3 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Activity className="h-4 w-4 text-sage-600" />
+              <Activity className="h-4 w-4 text-sage-600" aria-hidden="true" />
               <h2 className="font-serif text-xl font-semibold text-ink-900">Recent symptoms</h2>
             </div>
-            <button onClick={() => setShowSymptomForm((v) => !v)} className="btn-ghost text-xs">
-              {showSymptomForm ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+            <button onClick={() => setShowSymptomForm((v) => !v)} aria-expanded={showSymptomForm} className="btn-ghost text-xs">
+              {showSymptomForm ? <X className="h-3.5 w-3.5" aria-hidden="true" /> : <Plus className="h-3.5 w-3.5" aria-hidden="true" />}
               {showSymptomForm ? "Cancel" : "Log symptom"}
             </button>
           </div>
@@ -93,7 +134,8 @@ export function SymptomsPage() {
 
           {symptoms.length === 0 ? (
             <div className="card text-sm text-ink-600">
-              Nothing logged yet. Log one above, or tell CareWise in chat — e.g. "Mum had nausea this morning, around a 6."
+              Nothing logged in the last 14 days. Tap <strong className="font-medium">Log symptom</strong>, or
+              tell CareWise in chat, like "Mum had nausea this morning, around a 6."
             </div>
           ) : (
             <div className="space-y-2">
@@ -118,11 +160,11 @@ export function SymptomsPage() {
         <div className="mt-8">
           <div className="mb-3 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Pill className="h-4 w-4 text-sage-600" />
+              <Pill className="h-4 w-4 text-sage-600" aria-hidden="true" />
               <h2 className="font-serif text-xl font-semibold text-ink-900">Active medications</h2>
             </div>
-            <button onClick={() => setShowMedForm((v) => !v)} className="btn-ghost text-xs">
-              {showMedForm ? <X className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+            <button onClick={() => setShowMedForm((v) => !v)} aria-expanded={showMedForm} className="btn-ghost text-xs">
+              {showMedForm ? <X className="h-3.5 w-3.5" aria-hidden="true" /> : <Plus className="h-3.5 w-3.5" aria-hidden="true" />}
               {showMedForm ? "Cancel" : "Add medication"}
             </button>
           </div>
@@ -139,27 +181,30 @@ export function SymptomsPage() {
 
           {meds.length === 0 ? (
             <div className="card text-sm text-ink-600">
-              No medications tracked. Add one above, or tell CareWise in chat — e.g., "Add ondansetron 8mg, twice a day."
+              No medications yet. Tap <strong className="font-medium">Add medication</strong>, or tell CareWise
+              in chat, like "Add ondansetron 8mg, twice a day."
             </div>
           ) : (
             <div className="space-y-2">
               {meds.map((m) => (
                 <div
                   key={m.id}
-                  className="group flex animate-pop-in items-center justify-between rounded-xl border border-sand-200 bg-white p-3.5 shadow-soft transition-all duration-300 hover:border-sage-200 hover:shadow-lift"
+                  className="group flex animate-pop-in items-center justify-between gap-3 rounded-xl border border-sand-200 bg-white p-3.5 shadow-soft transition-all duration-300 hover:border-sage-200 hover:shadow-lift"
                 >
-                  <div>
+                  <div className="min-w-0">
                     <div className="font-medium text-ink-900 capitalize">{m.name}</div>
                     <div className="text-sm text-ink-700">
                       {m.dosage} · {m.schedule}
                     </div>
                     {m.notes && <div className="mt-1 text-xs text-ink-500">{m.notes}</div>}
                   </div>
+                  {/* Always visible on touch screens; on desktop it appears on hover or keyboard focus. */}
                   <button
-                    onClick={() => handleDeactivateMed(m.id)}
-                    className="rounded-lg px-2 py-1 text-xs text-ink-500 opacity-0 transition-all duration-200 hover:bg-sand-100 hover:scale-105 group-hover:opacity-100"
+                    onClick={() => handleDeactivateMed(m)}
+                    aria-label={`Stop tracking ${m.name}`}
+                    className="shrink-0 rounded-lg px-2 py-1.5 text-xs text-ink-600 transition-all duration-200 hover:bg-sand-100 focus-visible:opacity-100 md:opacity-0 md:group-hover:opacity-100"
                   >
-                    Stop taking
+                    Remove
                   </button>
                 </div>
               ))}
@@ -180,32 +225,43 @@ function SymptomForm({
   const [severity, setSeverity] = useState(5);
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!symptom.trim()) return;
     setSubmitting(true);
+    setError(null);
     try {
       await onSubmit({ symptom: symptom.trim(), severity, notes: notes.trim() || undefined });
+    } catch {
+      setError("Couldn't save that. Please check your connection and try again.");
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="card mb-4 animate-slide-up">
+    <form onSubmit={handleSubmit} className="card mb-4 animate-slide-up" aria-label="Log a symptom">
+      <label htmlFor="symptom-name" className="mb-1 block text-xs font-medium text-ink-600">
+        Symptom
+      </label>
       <input
+        id="symptom-name"
         autoFocus
         type="text"
         required
         className="input-field"
-        placeholder="What symptom? (e.g. nausea, fatigue, pain)"
+        placeholder="e.g. nausea, fatigue, pain"
         value={symptom}
         onChange={(e) => setSymptom(e.target.value)}
       />
       <div className="mt-3">
-        <label className="text-xs font-medium text-ink-600">Severity: {severity}/10</label>
+        <label htmlFor="symptom-severity" className="text-xs font-medium text-ink-600">
+          How bad? {severity}/10 <span className="font-normal">(1 = mild, 10 = worst)</span>
+        </label>
         <input
+          id="symptom-severity"
           type="range"
           min={1}
           max={10}
@@ -214,16 +270,25 @@ function SymptomForm({
           className="mt-1 w-full accent-sage-600"
         />
       </div>
+      <label htmlFor="symptom-notes" className="mb-1 mt-3 block text-xs font-medium text-ink-600">
+        Notes <span className="font-normal">(optional)</span>
+      </label>
       <input
+        id="symptom-notes"
         type="text"
-        className="input-field mt-3"
-        placeholder="Notes (optional)"
+        className="input-field"
+        placeholder="e.g. after breakfast, eased by evening"
         value={notes}
         onChange={(e) => setNotes(e.target.value)}
       />
+      {error && (
+        <p role="alert" className="mt-3 text-sm text-clay-500">
+          {error}
+        </p>
+      )}
       <div className="mt-4 flex justify-end">
         <button type="submit" disabled={submitting} className="btn-primary">
-          {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Log symptom"}
+          {submitting ? <Loader2 className="h-4 w-4 animate-spin" aria-label="Saving…" /> : "Log symptom"}
         </button>
       </div>
     </form>
@@ -245,11 +310,13 @@ function MedicationForm({
   const [schedule, setSchedule] = useState("");
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !dosage.trim() || !schedule.trim()) return;
     setSubmitting(true);
+    setError(null);
     try {
       await onSubmit({
         name: name.trim(),
@@ -257,50 +324,80 @@ function MedicationForm({
         schedule: schedule.trim(),
         notes: notes.trim() || undefined,
       });
+    } catch {
+      setError("Couldn't save that. Please check your connection and try again.");
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="card mb-4 animate-slide-up">
+    <form onSubmit={handleSubmit} className="card mb-4 animate-slide-up" aria-label="Add a medication">
+      <label htmlFor="med-name" className="mb-1 block text-xs font-medium text-ink-600">
+        Medication
+      </label>
       <input
+        id="med-name"
         autoFocus
         type="text"
         required
         className="input-field"
-        placeholder="Medication name"
+        placeholder="e.g. ondansetron"
         value={name}
         onChange={(e) => setName(e.target.value)}
       />
-      <div className="mt-3 grid grid-cols-2 gap-3">
-        <input
-          type="text"
-          required
-          className="input-field"
-          placeholder="Dosage (e.g. 8mg)"
-          value={dosage}
-          onChange={(e) => setDosage(e.target.value)}
-        />
-        <input
-          type="text"
-          required
-          className="input-field"
-          placeholder="Schedule (e.g. twice a day)"
-          value={schedule}
-          onChange={(e) => setSchedule(e.target.value)}
-        />
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div>
+          <label htmlFor="med-dosage" className="mb-1 block text-xs font-medium text-ink-600">
+            Dose
+          </label>
+          <input
+            id="med-dosage"
+            type="text"
+            required
+            className="input-field"
+            placeholder="e.g. 8mg"
+            value={dosage}
+            onChange={(e) => setDosage(e.target.value)}
+          />
+        </div>
+        <div>
+          <label htmlFor="med-schedule" className="mb-1 block text-xs font-medium text-ink-600">
+            How often
+          </label>
+          <input
+            id="med-schedule"
+            type="text"
+            required
+            className="input-field"
+            placeholder="e.g. twice a day"
+            value={schedule}
+            onChange={(e) => setSchedule(e.target.value)}
+          />
+        </div>
       </div>
+      <label htmlFor="med-notes" className="mb-1 mt-3 block text-xs font-medium text-ink-600">
+        Notes <span className="font-normal">(optional)</span>
+      </label>
       <input
+        id="med-notes"
         type="text"
-        className="input-field mt-3"
-        placeholder="Notes (optional)"
+        className="input-field"
+        placeholder="e.g. with food"
         value={notes}
         onChange={(e) => setNotes(e.target.value)}
       />
+      <p className="mt-3 text-xs text-ink-600">
+        This is just a record for you. Always follow the prescriber's instructions.
+      </p>
+      {error && (
+        <p role="alert" className="mt-3 text-sm text-clay-500">
+          {error}
+        </p>
+      )}
       <div className="mt-4 flex justify-end">
         <button type="submit" disabled={submitting} className="btn-primary">
-          {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Add medication"}
+          {submitting ? <Loader2 className="h-4 w-4 animate-spin" aria-label="Saving…" /> : "Add medication"}
         </button>
       </div>
     </form>
@@ -315,7 +412,8 @@ function SeverityPill({ severity }: { severity: number }) {
       ? "bg-clay-100 text-clay-500"
       : "bg-sage-100 text-sage-700";
   return (
-    <div className={`rounded-full px-3 py-1 text-sm font-semibold ${colorClass}`}>
+    <div className={`shrink-0 rounded-full px-3 py-1 text-sm font-semibold ${colorClass}`}>
+      <span className="sr-only">Severity </span>
       {severity}/10
     </div>
   );

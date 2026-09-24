@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
-import { Plus, Check, Loader2, Calendar, Pill, ShoppingBag, FileText } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Plus, Check, Loader2, Calendar, Pill, ShoppingBag, FileText, RefreshCw } from "lucide-react";
 import { api, type CareTask } from "../lib/api";
+import { usePageTitle } from "../lib/usePageTitle";
 
 const CATEGORY_META: Record<string, { Icon: React.ComponentType<{ className?: string }>; label: string }> = {
   appointment: { Icon: Calendar, label: "Appointment" },
@@ -10,8 +12,11 @@ const CATEGORY_META: Record<string, { Icon: React.ComponentType<{ className?: st
 };
 
 export function TasksPage() {
+  usePageTitle("Care plan");
   const [tasks, setTasks] = useState<CareTask[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newDate, setNewDate] = useState("");
@@ -20,9 +25,14 @@ export function TasksPage() {
   const [completingIds, setCompletingIds] = useState<Set<number>>(new Set());
 
   const load = async () => {
-    const data = await api.tasks();
-    setTasks(data);
-    setLoading(false);
+    setLoadFailed(false);
+    try {
+      setTasks(await api.tasks());
+    } catch {
+      setLoadFailed(true);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -30,8 +40,20 @@ export function TasksPage() {
   }, []);
 
   const handleComplete = async (id: number) => {
+    setActionError(null);
     setCompletingIds((prev) => new Set(prev).add(id));
-    await api.completeTask(id);
+    try {
+      await api.completeTask(id);
+    } catch {
+      // Put the row back the way it was so it doesn't look done when it isn't.
+      setCompletingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      setActionError("Couldn't mark that as done. Please try again.");
+      return;
+    }
     // Let the checkmark-and-strikethrough animation play before the row leaves.
     setTimeout(() => {
       setTasks((ts) => ts.filter((t) => t.id !== id));
@@ -47,6 +69,7 @@ export function TasksPage() {
     e.preventDefault();
     if (!newTitle.trim()) return;
     setSubmitting(true);
+    setActionError(null);
     try {
       await api.createTask({
         title: newTitle,
@@ -57,6 +80,8 @@ export function TasksPage() {
       setNewDate("");
       setShowAdd(false);
       await load();
+    } catch {
+      setActionError("Couldn't add that. Please check your connection and try again.");
     } finally {
       setSubmitting(false);
     }
@@ -67,66 +92,107 @@ export function TasksPage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-3xl px-4 py-8 md:px-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="font-serif text-3xl font-semibold tracking-tight">Care plan</h1>
             <p className="mt-1 text-sm text-ink-600">
-              Appointments, medications, errands. Add by typing here, or tell CareWise in chat.
+              Appointments, meds and errands. Add them here, or just mention them in chat.
             </p>
           </div>
-          <button onClick={() => setShowAdd(!showAdd)} className="btn-primary">
-            <Plus className="h-4 w-4" /> Add task
+          <button onClick={() => setShowAdd(!showAdd)} aria-expanded={showAdd} className="btn-primary">
+            <Plus className="h-4 w-4" aria-hidden="true" /> Add task
           </button>
         </div>
 
+        {actionError && (
+          <div role="alert" className="mt-4 rounded-lg border border-clay-200 bg-clay-50 p-3 text-sm text-clay-500">
+            {actionError}
+          </div>
+        )}
+
         {showAdd && (
-          <form onSubmit={handleAdd} className="card mt-6 animate-slide-up">
+          <form onSubmit={handleAdd} className="card mt-6 animate-slide-up" aria-label="Add a task">
+            <label htmlFor="task-title" className="mb-1 block text-xs font-medium text-ink-600">
+              What needs to happen?
+            </label>
             <input
+              id="task-title"
               autoFocus
               type="text"
               required
               className="input-field"
-              placeholder="What needs to happen?"
+              placeholder="e.g. Pick up prescription"
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
             />
-            <div className="mt-3 grid grid-cols-2 gap-3">
-              <input
-                type="datetime-local"
-                className="input-field"
-                value={newDate}
-                onChange={(e) => setNewDate(e.target.value)}
-              />
-              <select
-                className="input-field"
-                value={newCategory}
-                onChange={(e) => setNewCategory(e.target.value)}
-              >
-                <option value="general">General</option>
-                <option value="appointment">Appointment</option>
-                <option value="medication">Medication</option>
-                <option value="errand">Errand</option>
-              </select>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <div>
+                <label htmlFor="task-due" className="mb-1 block text-xs font-medium text-ink-600">
+                  When <span className="font-normal">(optional)</span>
+                </label>
+                <input
+                  id="task-due"
+                  type="datetime-local"
+                  className="input-field"
+                  value={newDate}
+                  onChange={(e) => setNewDate(e.target.value)}
+                />
+              </div>
+              <div>
+                <label htmlFor="task-category" className="mb-1 block text-xs font-medium text-ink-600">
+                  Type
+                </label>
+                <select
+                  id="task-category"
+                  className="input-field"
+                  value={newCategory}
+                  onChange={(e) => setNewCategory(e.target.value)}
+                >
+                  <option value="general">General</option>
+                  <option value="appointment">Appointment</option>
+                  <option value="medication">Medication</option>
+                  <option value="errand">Errand</option>
+                </select>
+              </div>
             </div>
             <div className="mt-4 flex justify-end gap-2">
               <button type="button" onClick={() => setShowAdd(false)} className="btn-ghost">
                 Cancel
               </button>
               <button type="submit" disabled={submitting} className="btn-primary">
-                {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Add"}
+                {submitting ? <Loader2 className="h-4 w-4 animate-spin" aria-label="Adding…" /> : "Add"}
               </button>
             </div>
           </form>
         )}
 
         {loading ? (
-          <div className="mt-12 flex justify-center">
-            <Loader2 className="h-5 w-5 animate-spin text-ink-500" />
+          <div role="status" className="mt-12 flex justify-center">
+            <Loader2 className="h-5 w-5 animate-spin text-ink-500" aria-hidden="true" />
+            <span className="sr-only">Loading your care plan…</span>
+          </div>
+        ) : loadFailed ? (
+          <div role="alert" className="mt-12 text-center">
+            <p className="font-serif text-lg text-ink-900">We couldn't load your care plan.</p>
+            <p className="mt-1 text-sm text-ink-600">Your tasks are safe. Check your connection and try again.</p>
+            <button onClick={() => { setLoading(true); load(); }} className="btn-primary mt-4">
+              <RefreshCw className="h-4 w-4" aria-hidden="true" /> Try again
+            </button>
           </div>
         ) : tasks.length === 0 ? (
           <div className="mt-12 text-center text-ink-600">
-            <p className="font-serif text-lg">Nothing scheduled.</p>
-            <p className="mt-1 text-sm">Add something above, or just tell CareWise in chat.</p>
+            <p className="font-serif text-lg text-ink-900">Nothing on the list yet.</p>
+            <p className="mt-1 text-sm">
+              Tap <strong className="font-medium">Add task</strong>, or tell CareWise in{" "}
+              <Link
+                to="/app/chat"
+                state={{ initialPrompt: "Add: oncology appointment Tuesday at 10am." }}
+                className="font-medium text-sage-700 underline"
+              >
+                chat
+              </Link>
+              , like "oncology appointment Tuesday at 10am".
+            </p>
           </div>
         ) : (
           <div className="mt-8 space-y-8">
@@ -183,15 +249,16 @@ function Section({
                     ? "border-sage-500 bg-sage-500"
                     : "border-sand-300 hover:border-sage-500 hover:bg-sage-50"
                 }`}
-                aria-label="Mark complete"
+                aria-label={`Mark "${t.title}" as done`}
               >
                 <Check
+                  aria-hidden="true"
                   className={`h-3.5 w-3.5 transition-colors ${
                     isCompleting ? "animate-check-pop text-white" : "text-transparent group-hover:text-sage-600"
                   }`}
                 />
               </button>
-              <Icon className="h-4 w-4 shrink-0 text-ink-500" />
+              <Icon className="h-4 w-4 shrink-0 text-ink-500" aria-label={meta.label} />
               <div className="flex-1 min-w-0">
                 <div
                   className={`text-[15px] font-medium truncate transition-all duration-300 ${
