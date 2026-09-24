@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Send, Loader2, Sparkles, MessageCircle, History, Plus } from "lucide-react";
-import { api, APIError, type AgentTrace, type ConversationSummary, type MessageOut } from "../lib/api";
+import { api, APIError, type AgentTrace, type ConversationSummary, type MessageOut, type TurnTrace } from "../lib/api";
 import { AgentBadge } from "../components/AgentBadge";
 import { useAuth } from "../lib/auth";
 import { usePageTitle } from "../lib/usePageTitle";
@@ -13,6 +13,7 @@ interface DisplayMessage {
   agents?: string[];
   trace?: AgentTrace[];
   riskLevel?: string | null;
+  turn?: TurnTrace | null;
   timestamp: Date;
 }
 
@@ -40,6 +41,7 @@ function toDisplayMessage(m: MessageOut): DisplayMessage {
     role: m.role as "user" | "assistant",
     content: m.content,
     agents: m.agent_used ? [m.agent_used] : undefined,
+    turn: m.turn,
     timestamp: new Date(m.created_at),
   };
 }
@@ -171,6 +173,7 @@ export function ChatPage() {
         agents: res.agent_trace.map((a) => a.agent),
         trace: res.agent_trace,
         riskLevel: res.risk_level,
+        turn: res.turn,
         timestamp: new Date(),
       };
       setMessages((m) => [...m, assistantMsg]);
@@ -401,8 +404,93 @@ function MessageBubble({
         >
           <p className="whitespace-pre-wrap text-[15px] leading-relaxed">{renderInline(message.content)}</p>
         </div>
+        {message.turn && <TurnDetails turn={message.turn} />}
       </div>
     </div>
+  );
+}
+
+const ROUTE_METHOD: Record<string, string> = {
+  shortcut: "a keyword shortcut",
+  "follow-up": "a follow-up to its previous question",
+  model: "the AI router",
+  "demo-fallback": "demo mode (no AI key configured)",
+  safety: "the safety check (fixed reply, no AI)",
+};
+
+const AGENT_NAME: Record<string, string> = {
+  emotional_support: "Emotional support",
+  symptom_tracker: "Symptom tracker",
+  care_coordinator: "Care coordinator",
+  resource_guide: "Resource guide",
+  burnout_monitor: "Burnout monitor",
+  safety: "Safety response",
+  router: "Router",
+};
+
+function seconds(ms: number | null | undefined) {
+  return ms == null ? "?" : `${(ms / 1000).toFixed(ms < 1000 ? 2 : 1)}s`;
+}
+
+/** "How this reply was made": the trace the backend records for each turn (no message text). */
+function TurnDetails({ turn }: { turn: TurnTrace }) {
+  const route = turn.route ? AGENT_NAME[turn.route] ?? turn.route : "an agent";
+  return (
+    <details className="group mt-1.5 text-xs text-ink-600">
+      <summary className="inline-flex cursor-pointer select-none items-center gap-1 rounded px-1 py-0.5 hover:text-ink-900">
+        How this reply was made
+        <span className="text-ink-500">· {seconds(turn.total_ms)}</span>
+      </summary>
+      <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-lg border border-sand-200 bg-sand-50 p-3">
+        <dt className="text-ink-500">Routed to</dt>
+        <dd>
+          {route} by {ROUTE_METHOD[turn.route_method ?? ""] ?? "the router"}
+        </dd>
+        {turn.agents.length > 1 && (
+          <>
+            <dt className="text-ink-500">Agents</dt>
+            <dd>{turn.agents.map((a) => AGENT_NAME[a] ?? a).join(" → ")}</dd>
+          </>
+        )}
+        {turn.retrieval && (
+          <>
+            <dt className="text-ink-500">Search</dt>
+            <dd>
+              {turn.retrieval.mode} search, {turn.retrieval.sections.length} article section
+              {turn.retrieval.sections.length === 1 ? "" : "s"} used
+            </dd>
+          </>
+        )}
+        <dt className="text-ink-500">AI calls</dt>
+        <dd>
+          {turn.model_calls.length === 0
+            ? "none"
+            : turn.model_calls
+                .map((c) => `${AGENT_NAME[c.step] ?? c.step} ${seconds(c.latency_ms)}${c.ok ? "" : " (failed)"}`)
+                .join(", ")}
+        </dd>
+        {turn.model_calls.length > 0 && (
+          <>
+            <dt className="text-ink-500">Tokens</dt>
+            <dd>
+              {turn.tokens.input.toLocaleString()} in, {turn.tokens.output.toLocaleString()} out
+              {turn.tokens.thinking ? `, ${turn.tokens.thinking.toLocaleString()} thinking` : ""}
+              {turn.cost_usd != null ? ` · about $${turn.cost_usd.toFixed(4)}` : ""}
+            </dd>
+          </>
+        )}
+        {turn.output_filter && (
+          <>
+            <dt className="text-ink-500">Safety filter</dt>
+            <dd>replaced a reply that looked like {turn.output_filter}</dd>
+          </>
+        )}
+        <dt className="text-ink-500">Total</dt>
+        <dd>
+          {seconds(turn.total_ms)} ({seconds(turn.model_ms)} waiting on the AI)
+        </dd>
+      </dl>
+    </details>
   );
 }
 

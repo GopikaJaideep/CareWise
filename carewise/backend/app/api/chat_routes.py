@@ -1,6 +1,9 @@
 """Chat API — primary entry point that drives the orchestrator."""
 from __future__ import annotations
 
+import json
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,8 +17,10 @@ from app.api.schemas import (
 from app.core.auth import get_current_user
 from app.core.database import get_db
 from app.core.safety import redact_pii, validate_response
+from app.core.tracing import start_trace
 from app.models.db import BurnoutCheckin, Conversation, Message, User
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 
@@ -93,18 +98,28 @@ async def chat(
         },
     )
 
-    # Run orchestration
-    orchestrator = Orchestrator(db)
-    responses = await orchestrator.run(ctx)
-    final_text = orchestrator.synthesize(responses)
+    # Run orchestration, tracing routing, agents and every model call for this turn.
+    with start_trace() as trace:
+        orchestrator = Orchestrator(db)
+        responses = await orchestrator.run(ctx)
+        final_text = orchestrator.synthesize(responses)
 
-    # Final output validation
-    valid, reason = validate_response(final_text)
-    if not valid:
-        final_text = (
-            "I started to write a response but caught something that might cross into specific medical advice. "
-            f"Could you ask your treatment team about this directly? (Filter triggered: {reason})"
-        )
+        # Final output validation
+        valid, reason = validate_response(final_text)
+        if not valid:
+            trace.extra["output_filter"] = reason
+            final_text = (
+                "I started to write a response but caught something that might cross into specific medical advice. "
+                f"Could you ask your treatment team about this directly? (Filter triggered: {reason})"
+            )
+    turn = trace.summary()
+    # One structured line per turn for the server logs. No message text, and no retrieved article
+    # names either: "nausea#0" next to a user id is health information. The full trace (visible
+    # only to the user) is stored with the reply; the log gets the count.
+    log_turn = {**turn}
+    if "retrieval" in log_turn:
+        log_turn["retrieval"] = {"mode": turn["retrieval"]["mode"], "sections": len(turn["retrieval"]["sections"])}
+    logger.info("chat_turn %s", json.dumps({"user_id": current_user.id, "conversation_id": conversation.id, **log_turn}))
 
     # Persist assistant message
     last_response = responses[-1] if responses else None
@@ -117,6 +132,7 @@ async def chat(
         meta={
             "agents": [r.agent.value for r in responses],
             "trace": [{"agent": r.agent.value, "metadata": r.metadata} for r in responses],
+            "turn": turn,
         },
     )
     db.add(assistant_msg)
@@ -131,6 +147,7 @@ async def chat(
             AgentTrace(agent=r.agent.value, metadata=r.metadata) for r in responses
         ],
         risk_level=assistant_msg.risk_level,
+        turn=turn,
     )
 
 

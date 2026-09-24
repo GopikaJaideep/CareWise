@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     llm_model: str = "claude-sonnet-4-5-20250929"
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.6-flash"
+    # Optional, for cost estimates in traces: USD per million tokens for the chat model.
+    # Left unset, traces report tokens but no cost (prices change; none are assumed).
+    llm_price_input_per_mtok: float | None = None
+    llm_price_output_per_mtok: float | None = None
     # Used for semantic search over the knowledge base when GEMINI_API_KEY is set.
     embedding_model: str = "gemini-embedding-001"
     llm_max_tokens: int = 1024

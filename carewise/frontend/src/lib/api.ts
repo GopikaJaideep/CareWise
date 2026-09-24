@@ -78,12 +78,36 @@ export interface AgentTrace {
   metadata: Record<string, unknown>;
 }
 
+/** How one reply was made: routing, agents, model calls and timing (never message text). */
+export interface TurnTrace {
+  route: string | null;
+  route_method: "shortcut" | "follow-up" | "model" | "demo-fallback" | "safety" | null;
+  agents: string[];
+  model_calls: {
+    step: string;
+    provider: string;
+    model: string;
+    latency_ms: number;
+    input_tokens: number | null;
+    output_tokens: number | null;
+    thinking_tokens: number | null;
+    ok: boolean;
+  }[];
+  model_ms: number;
+  total_ms: number | null;
+  tokens: { input: number; output: number; thinking: number };
+  cost_usd: number | null;
+  retrieval?: { mode: string; sections: string[] };
+  output_filter?: string;
+}
+
 export interface ChatResponse {
   conversation_id: number;
   message_id: number;
   content: string;
   agent_trace: AgentTrace[];
   risk_level: string | null;
+  turn?: TurnTrace | null;
 }
 
 export interface MessageOut {
@@ -92,6 +116,7 @@ export interface MessageOut {
   content: string;
   agent_used: string | null;
   created_at: string;
+  turn?: TurnTrace | null;
 }
 
 export interface ConversationSummary {

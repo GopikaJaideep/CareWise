@@ -67,6 +67,11 @@ class Message(Base):
 
     conversation: Mapped["Conversation"] = relationship(back_populates="messages")
 
+    @property
+    def turn(self) -> dict | None:
+        """Trace summary of how an assistant reply was made (see app/core/tracing.py)."""
+        return self.meta.get("turn") if isinstance(self.meta, dict) else None
+
 
 class SymptomLog(Base):
     __tablename__ = "symptom_logs"

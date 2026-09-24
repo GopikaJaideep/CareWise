@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      model_evals:
+        description: "Also run the full model evals (needs the GEMINI_API_KEY repository secret)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend tests and offline evals
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: carewise/backend
+    env:
+      # No model key: tests use fakes, and the offline evals must not depend on a paid API.
+      GEMINI_API_KEY: ""
+      ANTHROPIC_API_KEY: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12" # matches the production Dockerfile
+          cache: pip
+          cache-dependency-path: carewise/backend/requirements.txt
+      - run: pip install -r requirements.txt
+      - name: Tests
+        run: python -m pytest -q
+      - name: Offline evals (regression gates)
+        # Fails the build if crisis detection or retrieval drops below the recorded baseline
+        # (evals/README.md). Raise these numbers when a change improves them.
+        run: |
+          {
+            echo '<details><summary>Offline eval report</summary>'
+            echo
+            python -m evals.run --suite crisis,retrieval --no-write \
+              --fail-under crisis.recall=0.5 \
+              --fail-under crisis.precision=0.85 \
+              --fail-under retrieval.keyword.recall_at_k=0.86 \
+              --fail-under retrieval.keyword.correctly_refused=0.9
+            echo '</details>'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+  frontend:
+    name: Frontend type-check and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: carewise/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: carewise/frontend/package-lock.json
+      - run: npm ci
+      - name: Type-check and production build
+        run: npm run build
+
+  model-evals:
+    name: Full model evals
+    # Manual only: uses the model API (quota and cost), so it never runs on every push.
+    if: github.event_name == 'workflow_dispatch' && inputs.model_evals
+    needs: backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: carewise/backend
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: carewise/backend/requirements.txt
+      - run: pip install -r requirements.txt
+      - name: Check the secret is set
+        run: |
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "Add a GEMINI_API_KEY repository secret (Settings > Secrets and variables > Actions)." >&2
+            exit 1
+          fi
+      - name: Run all eval suites
+        # --delay keeps within free-tier rate limits. The runner stops (exit 2) instead of
+        # publishing scores if too many calls fail at the API.
+        run: python -m evals.run --delay 4 | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-report
+          path: carewise/backend/evals/results/
+          if-no-files-found: ignore

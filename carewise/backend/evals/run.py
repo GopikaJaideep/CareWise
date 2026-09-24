@@ -3,6 +3,7 @@
     python -m evals.run                       # every suite the current setup can run
     python -m evals.run --suite routing,tasks --limit 10
     python -m evals.run --delay 4             # space out calls for the Gemini free tier
+    python -m evals.run --suite crisis --fail-under crisis.recall=0.5   # CI regression gate
 
 Suites that need a model (routing, symptoms, tasks) run when GEMINI_API_KEY or
 ANTHROPIC_API_KEY is set; without one they are skipped, not faked. The crisis suite scores
@@ -27,6 +28,7 @@ from app.agents.orchestrator import Orchestrator
 from app.agents.symptom_tracker import SymptomTrackerAgent
 from app.core.config import get_settings
 from app.core.safety import detect_crisis
+from app.core.tracing import start_trace
 from app.services.llm import LLMClient, get_llm_client
 from app.services.retrieval import GeminiEmbedder, Retriever, load_corpus
 from evals.metrics import (
@@ -52,16 +54,32 @@ def load(name: str, limit: int | None) -> list[dict]:
     return rows[:limit] if limit else rows
 
 
+# If more than this share of a suite's cases hit API errors (quota, outage), its scores would
+# measure the outage, not the model, so the run stops without writing a report.
+MAX_ERROR_RATE = 0.2
+
+
 class Timer:
+    """Times each case and notices when its model call failed (quota, 5xx, blocked reply).
+
+    Failed calls come back as a friendly error string or {}, which would otherwise be scored as a
+    wrong answer; instead those cases are excluded from scoring and counted as errors."""
+
     def __init__(self) -> None:
         self.samples: list[float] = []
+        self.errors: list[str] = []
+        self.last_failed = False
 
-    async def run(self, coro):
+    async def run(self, coro, case_id: str = ""):
         start = time.perf_counter()
-        try:
-            return await coro
-        finally:
-            self.samples.append(time.perf_counter() - start)
+        with start_trace() as trace:
+            try:
+                return await coro
+            finally:
+                self.samples.append(time.perf_counter() - start)
+                self.last_failed = any(not call.ok for call in trace.calls)
+                if self.last_failed:
+                    self.errors.append(case_id)
 
     def summary(self) -> dict[str, float]:
         return {"p50_s": round(percentile(self.samples, 50), 3), "p95_s": round(percentile(self.samples, 95), 3)}
@@ -89,11 +107,14 @@ async def run_routing(cases: list[dict], llm, delay: float) -> dict[str, Any]:
             user_id=0, conversation_id=0, user_message=case["message"],
             history=case.get("history", []), metadata={"last_agent": case.get("last_agent")},
         )
-        predicted = (await timer.run(orch._classify_intent(ctx))).value
-        rows.append({**case, "predicted": predicted, "correct": predicted == case["expected"]})
+        predicted = (await timer.run(orch._classify_intent(ctx), case["id"])).value
         await asyncio.sleep(delay)
+        if timer.last_failed:
+            continue
+        rows.append({**case, "predicted": predicted, "correct": predicted == case["expected"]})
     report = classification_report(((r["expected"], r["predicted"]) for r in rows), ROUTING_LABELS)
     report["latency"] = timer.summary()
+    report["errors"] = timer.errors
     by_tag: dict[str, list[bool]] = {}
     for r in rows:
         for tag in r.get("tags", []):
@@ -109,7 +130,10 @@ async def run_symptoms(cases: list[dict], llm, delay: float) -> dict[str, Any]:
     timer = Timer()
     rows, sym_scores, med_scores = [], [], []
     for case in cases:
-        extracted = await timer.run(agent.extract(case["message"]))
+        extracted = await timer.run(agent.extract(case["message"]), case["id"])
+        await asyncio.sleep(delay)
+        if timer.last_failed:
+            continue
         s = score_symptoms(case["expected"], extracted)
         row = {**case, "extracted": extracted, "symptom_score": s, "correct": s["exact"]}
         sym_scores.append(s)
@@ -122,7 +146,6 @@ async def run_symptoms(cases: list[dict], llm, delay: float) -> dict[str, Any]:
             row["query_ok"] = extracted.get("query") == case["query"]
             row["correct"] = row["correct"] and row["query_ok"]
         rows.append(row)
-        await asyncio.sleep(delay)
     report = {
         "case_accuracy": sum(r["correct"] for r in rows) / len(rows) if rows else 0.0,
         "symptoms": extraction_summary(sym_scores),
@@ -131,6 +154,7 @@ async def run_symptoms(cases: list[dict], llm, delay: float) -> dict[str, Any]:
             [r["symptom_score"]["predicted"] == 0 for r in rows if not r["expected"] and "query" not in r and "medications" not in r]
         ),
         "latency": timer.summary(),
+        "errors": timer.errors,
         "failures": [r for r in rows if not r["correct"]],
     }
     return {"report": report, "cases": rows}
@@ -142,7 +166,10 @@ async def run_tasks(cases: list[dict], llm, delay: float) -> dict[str, Any]:
     timer = Timer()
     rows, scores = [], []
     for case in cases:
-        extracted = await timer.run(agent.extract(case["message"], EVAL_TZ, now_utc=EVAL_NOW))
+        extracted = await timer.run(agent.extract(case["message"], EVAL_TZ, now_utc=EVAL_NOW), case["id"])
+        await asyncio.sleep(delay)
+        if timer.last_failed:
+            continue
         s = score_tasks(case["expected"], extracted, EVAL_TZ)
         correct = s["exact"]
         if "query" in case:
@@ -152,7 +179,6 @@ async def run_tasks(cases: list[dict], llm, delay: float) -> dict[str, Any]:
             correct = correct and all(any(k in d for d in done) for k in case["mark_done"])
         scores.append(s)
         rows.append({**case, "extracted": extracted, "score": s, "correct": correct})
-        await asyncio.sleep(delay)
     fields = {f: sum(r["score"]["fields"].get(f, 0) for r in rows) for f in ("title", "due", "category")}
     expected_total = sum(len(r["expected"]) for r in rows) or 1
     report = {
@@ -161,6 +187,7 @@ async def run_tasks(cases: list[dict], llm, delay: float) -> dict[str, Any]:
         "field_accuracy": {f: round(v / expected_total, 3) for f, v in fields.items()},
         "fixed_now": EVAL_NOW.isoformat(),
         "latency": timer.summary(),
+        "errors": timer.errors,
         "failures": [r for r in rows if not r["correct"]],
     }
     return {"report": report, "cases": rows}
@@ -256,6 +283,13 @@ def render_markdown(meta: dict, results: dict[str, dict]) -> str:
                   f"Latency p50 {r['latency']['p50_s']}s.", ""]
         if r["failures"]:
             lines += ["Incorrect:", *[f"- `{f['id']}` {f['message']} → {f['score']['tasks'] or f['extracted']}" for f in r["failures"]], ""]
+    excluded = {
+        name: r["report"]["errors"] for name, r in results.items()
+        if isinstance(r["report"], dict) and r["report"].get("errors")
+    }
+    if excluded:
+        lines += ["## Excluded cases", "These cases hit an API error (quota, outage, blocked reply) and were not scored:",
+                  *[f"- {name}: {', '.join(ids)}" for name, ids in excluded.items()], ""]
     for name in meta["skipped"]:
         lines += [f"## {name.capitalize()}", "Skipped: needs a model (set GEMINI_API_KEY or ANTHROPIC_API_KEY).", ""]
     return "\n".join(lines)
@@ -269,6 +303,11 @@ async def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--provider", choices=["gemini", "anthropic"], help="override the configured provider")
     parser.add_argument("--model", help="override the model name")
     parser.add_argument("--no-write", action="store_true", help="print only; don't write report files")
+    parser.add_argument(
+        "--fail-under", action="append", default=[], metavar="SUITE.METRIC=MIN",
+        help="exit non-zero if a metric is below MIN, e.g. crisis.recall=0.5 or "
+             "retrieval.keyword.recall_at_k=0.86 (repeatable; used as a CI regression gate)",
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.WARNING)
@@ -298,7 +337,17 @@ async def main(argv: list[str] | None = None) -> int:
     results = {}
     for suite in run_now:
         print(f"running {suite}...", file=sys.stderr)
-        results[suite] = await RUNNERS[suite](load(suite, args.limit), llm, args.delay)
+        cases = load(suite, args.limit)
+        results[suite] = await RUNNERS[suite](cases, llm, args.delay)
+        errors = results[suite]["report"].get("errors", []) if isinstance(results[suite]["report"], dict) else []
+        if cases and len(errors) / len(cases) > MAX_ERROR_RATE:
+            print(
+                f"Aborted: {len(errors)} of {len(cases)} {suite} cases failed at the API (quota, outage or "
+                "blocked reply), so the scores would measure the outage, not the model. No report written. "
+                "Check the warnings above, then re-run later or with --delay.",
+                file=sys.stderr,
+            )
+            return 2
 
     markdown = render_markdown(meta, results)
     print(markdown)
@@ -309,7 +358,25 @@ async def main(argv: list[str] | None = None) -> int:
         (RESULTS / f"{stamp}-{tag}.md").write_text(markdown, encoding="utf-8")
         (RESULTS / f"{stamp}-{tag}.json").write_text(json.dumps({"meta": meta, "results": results}, indent=2, default=str), encoding="utf-8")
         print(f"\nwrote {RESULTS / (stamp + '-' + tag)}.md/.json", file=sys.stderr)
-    return 0
+    return check_gates(results, args.fail_under)
+
+
+def check_gates(results: dict[str, dict], gates: list[str]) -> int:
+    """Each gate is SUITE.METRIC[.METRIC...]=MIN, looked up in that suite's report."""
+    failed = []
+    for gate in gates:
+        path, _, minimum = gate.partition("=")
+        suite, *keys = path.split(".")
+        value: Any = results.get(suite, {}).get("report")
+        for key in keys:
+            value = value.get(key) if isinstance(value, dict) else None
+        if not isinstance(value, (int, float)):
+            failed.append(f"{path}: not measured in this run")
+        elif value < float(minimum):
+            failed.append(f"{path} = {value:.3f}, below the required {float(minimum):.3f}")
+    for line in failed:
+        print(f"EVAL GATE FAILED: {line}", file=sys.stderr)
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

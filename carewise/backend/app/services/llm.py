@@ -4,12 +4,14 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from typing import Any
 
 import httpx
 from anthropic import AsyncAnthropic, APIError
 
 from app.core.config import get_settings
+from app.core.tracing import record_call
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -123,13 +125,21 @@ class LLMClient:
         max_tokens = max_tokens or settings.llm_max_tokens
         temperature = temperature if temperature is not None else settings.llm_temperature
 
+        start = time.perf_counter()
         if self.provider == "gemini":
-            return await self._complete_gemini(system, messages, max_tokens, temperature, json_mode)
-        return await self._complete_anthropic(system, messages, max_tokens, temperature)
+            text, usage, ok = await self._complete_gemini(system, messages, max_tokens, temperature, json_mode)
+        else:
+            text, usage, ok = await self._complete_anthropic(system, messages, max_tokens, temperature)
+        # Recorded against the current chat turn's trace, if any (see app/core/tracing.py).
+        record_call(
+            provider=self.provider, model=self.model, ok=ok,
+            latency_ms=round((time.perf_counter() - start) * 1000), **usage,
+        )
+        return text
 
     async def _complete_anthropic(
         self, system: str, messages: list[dict[str, str]], max_tokens: int, temperature: float
-    ) -> str:
+    ) -> tuple[str, dict[str, Any], bool]:
         assert self.client is not None
         try:
             response = await self.client.messages.create(
@@ -139,10 +149,11 @@ class LLMClient:
                 max_tokens=max_tokens,
                 temperature=temperature,
             )
-            return response.content[0].text
+            usage = {"input_tokens": response.usage.input_tokens, "output_tokens": response.usage.output_tokens}
+            return response.content[0].text, usage, True
         except APIError as e:
             logger.error("Anthropic API error: %s", e)
-            return ERROR_MESSAGE
+            return ERROR_MESSAGE, {}, False
 
     async def _complete_gemini(
         self,
@@ -151,17 +162,23 @@ class LLMClient:
         max_tokens: int,
         temperature: float,
         json_mode: bool,
-    ) -> str:
+    ) -> tuple[str, dict[str, Any], bool]:
         payload = build_gemini_payload(system, messages, max_tokens, temperature, json_mode, self.model)
         try:
             data = await self._gemini_request(payload)
         except httpx.HTTPStatusError as e:
             logger.error("Gemini API error %s: %s", e.response.status_code, e.response.text[:300])
-            return ERROR_MESSAGE
+            return ERROR_MESSAGE, {}, False
         except httpx.HTTPError as e:
             logger.error("Gemini request failed: %s", e)
-            return ERROR_MESSAGE
+            return ERROR_MESSAGE, {}, False
 
+        meta = data.get("usageMetadata") or {}
+        usage = {
+            "input_tokens": meta.get("promptTokenCount"),
+            "output_tokens": meta.get("candidatesTokenCount"),
+            "thinking_tokens": meta.get("thoughtsTokenCount"),
+        }
         text = parse_gemini_text(data)
         if text is None:
             finish = (data.get("candidates") or [{}])[0].get("finishReason")
@@ -169,12 +186,12 @@ class LLMClient:
                 "Gemini returned no text (finishReason=%s, promptFeedback=%s)",
                 finish, data.get("promptFeedback"),
             )
-            return ERROR_MESSAGE
+            return ERROR_MESSAGE, usage, False
         finish = (data.get("candidates") or [{}])[0].get("finishReason")
         if finish == "MAX_TOKENS":
             # Still return the partial reply, but make truncation visible in the logs.
             logger.warning("Gemini reply hit maxOutputTokens and was cut off (usage=%s)", data.get("usageMetadata"))
-        return text
+        return text, usage, True
 
     async def _gemini_request(self, payload: dict[str, Any]) -> dict[str, Any]:
         url = GEMINI_URL.format(model=self.model)

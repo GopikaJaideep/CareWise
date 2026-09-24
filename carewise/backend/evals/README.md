@@ -27,6 +27,18 @@ are reported as skipped, never faked. `crisis` scores the deterministic keyword 
 runs. Each run writes a Markdown report and a JSON file with every case to `evals/results/`
 (git-ignored; commit a report deliberately when you want to publish numbers).
 
+If more than 20% of a suite's cases fail at the API (quota exhausted, outage, blocked reply), the
+run stops with exit code 2 and writes no report: those scores would measure the outage, not the
+model. Isolated failures are excluded from scoring and listed under "Excluded cases".
+
+`--fail-under SUITE.METRIC=MIN` turns a run into a regression gate. CI (`.github/workflows/ci.yml`)
+runs the offline suites on every push and pull request and fails the build if crisis recall or
+precision, or keyword retrieval recall or refusal, drops below the baselines below. When a change
+improves a number, raise its gate in the workflow. The full model evals run from the Actions tab
+("Run workflow", tick "model evals") using a `GEMINI_API_KEY` repository secret, and upload the
+report as an artifact. Use a separate key from production: an eval run can exhaust a free-tier
+daily quota and take the live app's replies down with it.
+
 Scoring lives in `metrics.py` and is unit-tested (`tests/test_eval_metrics.py`), including an
 end-to-end run of the runner against a fake model.
 

@@ -86,6 +86,8 @@ class ChatResponse(BaseModel):
     content: str
     agent_trace: list[AgentTrace]
     risk_level: str | None = None
+    # How this reply was made: routing, agents, model calls, tokens, timing. No message text.
+    turn: dict[str, Any] | None = None
 
 
 class MessageOut(BaseModel):
@@ -94,6 +96,7 @@ class MessageOut(BaseModel):
     content: str
     agent_used: str | None
     created_at: UTCDateTime
+    turn: dict[str, Any] | None = None  # trace summary, for assistant messages
 
     class Config:
         from_attributes = True
