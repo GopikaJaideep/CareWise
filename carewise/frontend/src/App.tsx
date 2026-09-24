@@ -17,7 +17,7 @@ import { NotFoundPage } from "./pages/NotFoundPage";
 import { AppShell } from "./components/AppShell";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, unreachable } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -27,6 +27,9 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
         <span className="sr-only">Loading…</span>
       </div>
     );
+  }
+  if (!user && unreachable) {
+    return <WakingUpScreen />;
   }
   if (!user) {
     return (
@@ -50,6 +53,27 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
         {children}
       </Suspense>
     </AppShell>
+  );
+}
+
+/** Shown when the person is signed in but the server can't be reached yet. Keeps retrying. */
+function WakingUpScreen() {
+  const { retry, logout } = useAuth();
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-sand-50 px-6">
+      <div className="max-w-sm text-center">
+        <Loader2 className="mx-auto h-6 w-6 animate-spin text-sage-600" aria-hidden="true" />
+        <h1 className="mt-5 font-serif text-2xl font-semibold text-ink-900">Waking up CareWise…</h1>
+        <p role="status" className="mt-2 text-sm text-ink-600">
+          The server rests when it's quiet and can take up to a minute to start. You're still signed
+          in, and we'll keep trying.
+        </p>
+        <div className="mt-6 flex justify-center gap-2">
+          <button onClick={retry} className="btn-primary">Try now</button>
+          <button onClick={logout} className="btn-ghost">Sign out</button>
+        </div>
+      </div>
+    </main>
   );
 }
 

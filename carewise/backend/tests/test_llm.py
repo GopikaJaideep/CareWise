@@ -66,10 +66,12 @@ class TestGeminiPayload:
         payload = build_gemini_payload("s", [{"role": "user", "content": "x"}], 256, 0.2, True, "gemini-2.5-flash")
         assert payload["generationConfig"]["responseMimeType"] == "application/json"
 
-    def test_thinking_disabled_only_for_25_flash(self):
-        flash = build_gemini_payload("s", [{"role": "user", "content": "x"}], 256, 0.2, False, "gemini-2.5-flash")
+    def test_thinking_disabled_for_every_flash_model(self):
+        # gemini-3.6-flash (the default) spent half its output budget thinking and truncated replies.
+        for model in ("gemini-2.5-flash", "gemini-3.6-flash", "gemini-3-flash-lite"):
+            payload = build_gemini_payload("s", [{"role": "user", "content": "x"}], 256, 0.2, False, model)
+            assert payload["generationConfig"]["thinkingConfig"] == {"thinkingBudget": 0}, model
         other = build_gemini_payload("s", [{"role": "user", "content": "x"}], 256, 0.2, False, "gemini-pro-latest")
-        assert flash["generationConfig"]["thinkingConfig"] == {"thinkingBudget": 0}
         assert "thinkingConfig" not in other["generationConfig"]
 
 
