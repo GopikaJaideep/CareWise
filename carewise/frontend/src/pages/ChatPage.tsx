@@ -65,6 +65,7 @@ export function ChatPage() {
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const refocusComposerRef = useRef(false);
 
   const openConversation = async (id: number) => {
     setError(null);
@@ -125,6 +126,15 @@ export function ChatPage() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
+  // After a send finishes, put the cursor back in the composer. This can't happen inside send()
+  // itself because the textarea is still disabled until the re-render.
+  useEffect(() => {
+    if (!loading && refocusComposerRef.current) {
+      refocusComposerRef.current = false;
+      textareaRef.current?.focus();
+    }
+  }, [loading]);
+
   // Auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
@@ -172,11 +182,17 @@ export function ChatPage() {
       setError(friendlyError(err));
     } finally {
       setLoading(false);
-      textareaRef.current?.focus();
+      refocusComposerRef.current = true;
     }
   };
 
   const isEmpty = messages.length === 0 && !historyLoading;
+
+  const errorBanner = error && (
+    <div role="alert" className="mt-4 rounded-lg border border-clay-200 bg-clay-50 p-3 text-sm text-clay-500">
+      {error}
+    </div>
+  );
 
   return (
     <div className="flex h-full flex-col bg-sand-50">
@@ -222,6 +238,11 @@ export function ChatPage() {
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto scroll-fade">
         <div className="mx-auto max-w-3xl px-4 py-8 md:px-6" role="log" aria-live="polite" aria-label="Conversation">
+          {!isEmpty && <h1 className="sr-only">Chat with CareWise</h1>}
+
+          {/* With an empty thread, show errors up top so they aren't hidden below the suggestions. */}
+          {messages.length === 0 && errorBanner}
+
           {historyLoading && messages.length === 0 && (
             <div role="status" className="flex items-center justify-center gap-2 py-16 text-sm text-ink-600">
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -275,11 +296,7 @@ export function ChatPage() {
             </div>
           )}
 
-          {error && (
-            <div role="alert" className="mt-4 rounded-lg border border-clay-200 bg-clay-50 p-3 text-sm text-clay-500">
-              {error}
-            </div>
-          )}
+          {messages.length > 0 && errorBanner}
         </div>
       </div>
 
