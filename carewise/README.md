@@ -123,6 +123,16 @@ Open `http://localhost:5173`. The Vite dev server proxies `/api/*` to the backen
 
 CareWise will run without `ANTHROPIC_API_KEY` set — agents return clearly-marked demo responses so you can explore the UI, auth, persistence, and routing without spending tokens.
 
+### Deploying the backend: keep your data
+
+By default the backend stores everything in a SQLite file inside the server. Most hosts (Render, Railway, Koyeb, Fly without a volume) reset the server's disk on every deploy, which **deletes every account and record**. For any hosted deployment, point `DATABASE_URL` at a Postgres database instead (Neon, Supabase and Render all have free tiers):
+
+```
+DATABASE_URL=postgresql://user:password@host/dbname?sslmode=require
+```
+
+Paste the URL exactly as your provider shows it; `postgres://` and `sslmode=` are converted for the async driver automatically. Tables are created on first start. Also set a fixed `SECRET_KEY`, or everyone is signed out whenever it changes. The startup log says which database is in use.
+
 ---
 
 ## Repository layout
