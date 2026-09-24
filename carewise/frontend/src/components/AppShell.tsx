@@ -1,6 +1,6 @@
 import { type ReactNode } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import { Heart, MessageCircle, LayoutDashboard, Calendar, Activity, LogOut, BookOpen, Phone } from "lucide-react";
+import { Heart, MessageCircle, LayoutDashboard, Calendar, Activity, LogOut, BookOpen, Phone, Wind } from "lucide-react";
 import { useAuth } from "../lib/auth";
 
 const NAV = [
@@ -60,6 +60,17 @@ export function AppShell({ children }: { children: ReactNode }) {
               {label}
             </NavLink>
           ))}
+          <NavLink
+            to="/app/breathe"
+            className={({ isActive }) =>
+              `mt-4 flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                isActive ? "bg-sage-50 text-sage-700" : "text-ink-700 hover:bg-sand-100"
+              }`
+            }
+          >
+            <Wind className="h-4 w-4" aria-hidden="true" />
+            Take a breather
+          </NavLink>
         </nav>
 
         <div className="mx-3 mb-3 rounded-lg border border-clay-200 bg-clay-50 p-3 text-xs text-ink-700">

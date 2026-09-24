@@ -5,7 +5,7 @@ import {
 } from "recharts";
 import {
   Activity, Calendar, Battery, Pill, ArrowRight, Loader2, MessageCircle,
-  BellRing, BellOff, Sparkles, RefreshCw,
+  BellRing, BellOff, Sparkles, RefreshCw, Wind,
 } from "lucide-react";
 import { api, type DashboardSummary } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -265,6 +265,18 @@ export function DashboardPage() {
               </Link>
             </div>
           )}
+
+          <Link
+            to="/app/breathe"
+            className="mt-4 flex items-center gap-3 rounded-lg border border-sand-200 bg-sand-50 p-3 text-sm text-ink-800 transition-colors hover:border-sage-300 hover:bg-white"
+          >
+            <Wind className="h-4 w-4 shrink-0 text-sage-600" aria-hidden="true" />
+            <span className="flex-1">
+              <span className="font-medium">Take a breather.</span>{" "}
+              <span className="text-ink-600">A calm 1–5 minute breathing pause. No score, it just ends.</span>
+            </span>
+            <ArrowRight className="h-4 w-4 shrink-0 text-ink-500" aria-hidden="true" />
+          </Link>
 
           {summary.burnout_category &&
             ["high", "very high"].includes(summary.burnout_category) && (

@@ -12,6 +12,7 @@ const ChatPage = lazy(() => import("./pages/ChatPage").then((m) => ({ default: m
 const TasksPage = lazy(() => import("./pages/TasksPage").then((m) => ({ default: m.TasksPage })));
 const SymptomsPage = lazy(() => import("./pages/SymptomsPage").then((m) => ({ default: m.SymptomsPage })));
 const ResourcesPage = lazy(() => import("./pages/ResourcesPage").then((m) => ({ default: m.ResourcesPage })));
+const BreathePage = lazy(() => import("./pages/BreathePage").then((m) => ({ default: m.BreathePage })));
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { AppShell } from "./components/AppShell";
 
@@ -126,6 +127,14 @@ export default function App() {
           element={
             <ProtectedRoute>
               <ResourcesPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/app/breathe"
+          element={
+            <ProtectedRoute>
+              <BreathePage />
             </ProtectedRoute>
           }
         />
