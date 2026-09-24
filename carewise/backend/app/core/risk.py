@@ -16,6 +16,8 @@ import logging
 from dataclasses import dataclass
 from typing import Literal
 
+from app.agents.outputs import RiskOutput
+
 logger = logging.getLogger(__name__)
 
 Level = Literal["none", "concern", "crisis"]
@@ -55,22 +57,16 @@ async def assess_risk(llm, message: str, history: list[dict[str, str]] | None = 
         return UNKNOWN
     try:
         result = await asyncio.wait_for(
-            llm.complete_json(
+            llm.complete_structured(
                 system=RISK_SYSTEM,
                 messages=[*(history or [])[-2:], {"role": "user", "content": message}],
-                schema_hint='{"level": str, "who": str, "reason": str}',
+                output=RiskOutput,
             ),
             timeout=TIMEOUT_S,
         )
     except Exception as e:  # timeout or client error: the keyword check still stands
         logger.warning("Risk screen unavailable (%s); relying on keyword check", type(e).__name__)
         return UNKNOWN
-    level = str(result.get("level", "")).lower()
-    who = str(result.get("who", "unknown")).lower()
-    if level not in ("none", "concern", "crisis"):
+    if result is None:  # didn't validate even after a repair, or the call failed
         return UNKNOWN
-    return RiskAssessment(
-        level=level,  # type: ignore[arg-type]
-        who=who if who in ("self", "care_recipient", "other") else "unknown",  # type: ignore[arg-type]
-        reason=str(result.get("reason", ""))[:120],
-    )
+    return RiskAssessment(level=result.level, who=result.who, reason=result.reason[:120])

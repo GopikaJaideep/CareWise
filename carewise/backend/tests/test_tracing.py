@@ -10,6 +10,7 @@ from app.agents.base import AgentName, AgentResponse, BaseAgent, SessionContext
 from app.agents.orchestrator import Orchestrator
 from app.core.tracing import start_trace, step
 from app.services import llm
+from tests.fakes import StructuredFromJson
 
 
 def gemini_reply(text, usage=None):
@@ -90,7 +91,7 @@ async def test_chat_turn_returns_trace_and_logs_it_without_message_text(db, monk
     from app.core.database import get_db
     from app.models.db import User
 
-    class DemoModel:
+    class DemoModel(StructuredFromJson):
         provider, model = None, "none"
 
         async def complete(self, system, messages, **kw):

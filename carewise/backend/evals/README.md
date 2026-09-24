@@ -7,7 +7,7 @@ Unit tests check that code paths work; these evals check whether the AI makes th
 |---|---|---|
 | `crisis` | 48 (24 crises, 24 hard negatives) | Crisis detection: recall (crises caught) and false-positive rate. Negatives include end-of-life planning ("she doesn't want to die in hospital"), idioms ("this week is killing me") and near-keyword phrases. |
 | `retrieval` | 40 (30 questions, 10 off-topic) | Resource-guide search: hit@1, recall@4, MRR, and whether off-topic questions are refused. Runs keyword-only always and hybrid too when `GEMINI_API_KEY` is set, side by side. |
-| `routing` | 80 | Which agent handles a message: accuracy, per-agent precision/recall, accuracy by tag (`tricky`, `follow-up`, `mixed`, `resources-page`, ...). |
+| `routing` | 86 | Which agent handles a message: accuracy, per-agent precision/recall, accuracy by tag (`tricky`, `follow-up`, `mixed`, `resources-page`, ...). Six `multi` cases also check every agent for messages with several requests ("log nausea 6. Also remind me chemo Tuesday"), in order. |
 | `symptoms` | 23 | Symptom and medication extraction, including "pain is really bad" (no number), which must log nothing rather than a guessed severity. |
 | `tasks` | 18 | Task extraction: title, category, and due date/time in the caregiver's timezone, relative to a fixed "now" (Wed 23 Sep 2026, 9:00 Sydney) so "Tuesday at 10" has one right answer. |
 

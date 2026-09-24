@@ -5,7 +5,9 @@ import asyncio
 import json
 import logging
 import time
-from typing import Any
+from typing import Any, TypeVar
+
+from pydantic import BaseModel, ValidationError
 
 import httpx
 from anthropic import AsyncAnthropic, APIError
@@ -15,6 +17,8 @@ from app.core.tracing import record_call
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+T = TypeVar("T", bound=BaseModel)
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 ERROR_MESSAGE = "I'm having trouble responding right now. Could you try again in a moment?"
@@ -223,26 +227,49 @@ class LLMClient:
         text = await self.complete(
             full_system, messages, max_tokens=max_tokens, temperature=0.2, json_mode=True
         )
-        text = text.strip()
-        # Strip accidental fences
-        if text.startswith("```"):
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:]
-        try:
-            parsed = json.loads(text.strip())
-        except json.JSONDecodeError as e:
-            logger.warning("Failed to parse JSON response: %s\nRaw: %s", e, text[:200])
-            return {}
-        # Models sometimes wrap the one requested object in a list: [{...}].
-        if isinstance(parsed, list) and len(parsed) == 1 and isinstance(parsed[0], dict):
-            parsed = parsed[0]
-        if not isinstance(parsed, dict):
-            logger.warning(
-                "Expected a JSON object, got %s; discarding. Raw: %s", type(parsed).__name__, text[:200]
-            )
-            return {}
-        return parsed
+        return parse_json_object(text)
+
+    async def complete_structured(
+        self,
+        system: str,
+        messages: list[dict[str, str]],
+        output: type[T],
+        max_tokens: int | None = None,
+    ) -> T | None:
+        """JSON output validated against a Pydantic model (app/agents/outputs.py).
+
+        If the reply doesn't validate, the validation errors are sent back once for a corrected
+        reply. Returns None if it still doesn't validate, or if the call itself failed (quota,
+        outage): then there is nothing to repair, so no second call is made.
+        """
+        if self.provider is None:
+            return None
+        schema_hint = json.dumps(output.model_json_schema(), separators=(",", ":"))
+        full_system = (
+            f"{system}\n\n"
+            f"You MUST respond with valid JSON matching this JSON Schema: {schema_hint}\n"
+            "Do NOT include markdown fences, prose, or any text outside the JSON object."
+        )
+        text = await self.complete(full_system, messages, max_tokens=max_tokens, temperature=0.2, json_mode=True)
+        if text == ERROR_MESSAGE:
+            return None
+        result = _validate(output, text)
+        if not isinstance(result, str):
+            return result
+        logger.info("Structured output failed validation (%s); asking for a correction", result[:200])
+        repair = [
+            *messages,
+            {"role": "assistant", "content": text},
+            {"role": "user", "content": f"That JSON didn't match the schema: {result}\nReply with corrected JSON only."},
+        ]
+        retry_text = await self.complete(full_system, repair, max_tokens=max_tokens, temperature=0.0, json_mode=True)
+        if retry_text == ERROR_MESSAGE:
+            return None
+        fixed = _validate(output, retry_text)
+        if isinstance(fixed, str):
+            logger.warning("Structured output still invalid after one repair: %s", fixed[:200])
+            return None
+        return fixed
 
     def _fallback_response(self, messages: list[dict[str, str]]) -> str:
         """Used when no API key is configured (demo mode)."""
@@ -254,6 +281,41 @@ class LLMClient:
             "(emotional support, symptom tracking, care coordination, resources, or burnout). "
             "Set GEMINI_API_KEY (free) or ANTHROPIC_API_KEY to enable real responses."
         )
+
+
+def parse_json_object(text: str) -> dict[str, Any]:
+    """The model's reply as a JSON object, or {} if it isn't one."""
+    text = text.strip()
+    # Strip accidental fences
+    if text.startswith("```"):
+        text = text.split("```")[1]
+        if text.startswith("json"):
+            text = text[4:]
+    try:
+        parsed = json.loads(text.strip())
+    except json.JSONDecodeError as e:
+        logger.warning("Failed to parse JSON response: %s\nRaw: %s", e, text[:200])
+        return {}
+    # Models sometimes wrap the one requested object in a list: [{...}].
+    if isinstance(parsed, list) and len(parsed) == 1 and isinstance(parsed[0], dict):
+        parsed = parsed[0]
+    if not isinstance(parsed, dict):
+        logger.warning(
+            "Expected a JSON object, got %s; discarding. Raw: %s", type(parsed).__name__, text[:200]
+        )
+        return {}
+    return parsed
+
+
+def _validate(output: type[T], text: str) -> T | str:
+    """The validated model, or a short description of what's wrong (for the repair prompt)."""
+    data = parse_json_object(text)
+    if not data:
+        return "the reply was not a JSON object"
+    try:
+        return output.model_validate(data)
+    except ValidationError as e:
+        return "; ".join(f"{'.'.join(map(str, err['loc'])) or 'root'}: {err['msg']}" for err in e.errors()[:5])
 
 
 _client: LLMClient | None = None

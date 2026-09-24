@@ -10,9 +10,10 @@ from app.agents.safety import SafetyAgent
 from app.core import risk as risk_module
 from app.core.risk import UNKNOWN, assess_risk
 from app.core.safety import _format_crisis_response, _format_third_party_crisis_response
+from tests.fakes import StructuredFromJson
 
 
-class ScriptedModel:
+class ScriptedModel(StructuredFromJson):
     """Answers the risk screen and the router from scripts; can be slow or fail."""
 
     provider, model = "fake", "fake"

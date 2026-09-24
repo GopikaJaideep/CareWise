@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.base import AgentName, AgentResponse, BaseAgent, SessionContext
+from app.agents.outputs import CheckinExtraction
 from app.models.db import BurnoutCheckin
 from app.services.llm import get_llm_client
 
@@ -146,11 +147,13 @@ class BurnoutMonitorAgent(BaseAgent):
         self.system_prompt = RESPONSE_SYSTEM
 
     async def handle(self, ctx: SessionContext) -> AgentResponse:
-        extraction = await self.llm.complete_json(
+        # Out-of-range numbers come back as None, so they're asked for again rather than saved.
+        result = await self.llm.complete_structured(
             system=EXTRACTION_SYSTEM,
             messages=[{"role": "user", "content": ctx.user_message}],
-            schema_hint='{"sleep_hours": float|null, "stress_level": int|null, "energy_level": int|null, "self_care_minutes": int|null, "notes": str|null, "is_checkin": bool}',
+            output=CheckinExtraction,
         )
+        extraction = result.model_dump() if result else {}
 
         required = ["sleep_hours", "stress_level", "energy_level", "self_care_minutes"]
 

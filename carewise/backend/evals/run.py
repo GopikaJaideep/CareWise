@@ -132,11 +132,16 @@ async def run_routing(cases: list[dict], llm, delay: float) -> dict[str, Any]:
             user_id=0, conversation_id=0, user_message=case["message"],
             history=case.get("history", []), metadata={"last_agent": case.get("last_agent")},
         )
-        predicted = (await timer.run(orch._classify_intent(ctx), case["id"])).value
+        intents = await timer.run(orch._route(ctx), case["id"])
         await asyncio.sleep(delay)
         if timer.last_failed:
             continue
-        rows.append({**case, "predicted": predicted, "correct": predicted == case["expected"]})
+        predicted = intents[0][0].value
+        row = {**case, "predicted": predicted, "correct": predicted == case["expected"]}
+        if "expected_all" in case:  # several requests in one message: every agent, in order
+            row["predicted_all"] = [agent.value for agent, _ in intents]
+            row["all_correct"] = row["predicted_all"] == case["expected_all"]
+        rows.append(row)
     report = classification_report(((r["expected"], r["predicted"]) for r in rows), ROUTING_LABELS)
     report["latency"] = timer.summary()
     report["errors"] = timer.errors
@@ -146,6 +151,12 @@ async def run_routing(cases: list[dict], llm, delay: float) -> dict[str, Any]:
             by_tag.setdefault(tag, []).append(r["correct"])
     report["accuracy_by_tag"] = {t: round(sum(v) / len(v), 3) for t, v in sorted(by_tag.items()) if len(v) >= 3}
     report["failures"] = [r for r in rows if not r["correct"]]
+    multi = [r for r in rows if "all_correct" in r]
+    report["multi_request"] = {
+        "n": len(multi),
+        "all_agents_correct": sum(r["all_correct"] for r in multi) / len(multi) if multi else None,
+        "failures": [r for r in multi if not r["all_correct"]],
+    }
     return {"report": report, "cases": rows}
 
 
@@ -310,6 +321,11 @@ def render_markdown(meta: dict, results: dict[str, dict]) -> str:
                   "| Agent | Precision | Recall | F1 | Cases |", "|---|---|---|---|---|"]
         lines += [f"| {k} | {pct(v['precision'])} | {pct(v['recall'])} | {v['f1']:.2f} | {v['support']} |" for k, v in r["per_label"].items()]
         lines += ["", "Accuracy by tag: " + ", ".join(f"{k} {pct(v)}" for k, v in r["accuracy_by_tag"].items()), ""]
+        m = r.get("multi_request") or {}
+        if m.get("n"):
+            lines += [f"Several requests in one message: every agent right, in order, for **{pct(m['all_agents_correct'])}** of {m['n']} cases.", ""]
+            if m["failures"]:
+                lines += [*[f"- `{f['id']}` expected {f['expected_all']}, got {f['predicted_all']}" for f in m["failures"]], ""]
         if r["failures"]:
             lines += ["Misrouted:", *[f"- `{f['id']}` expected **{f['expected']}**, got {f['predicted']}: {f['message']}" for f in r["failures"]], ""]
     if "symptoms" in results:
