@@ -245,6 +245,18 @@ export const api = {
   burnoutCheckins: (limit = 30) =>
     request<BurnoutCheckin[]>(`/burnout/checkins?limit=${limit}`),
 
+  createBurnoutCheckin: (data: {
+    sleep_hours: number;
+    stress_level: number;
+    energy_level: number;
+    self_care_minutes: number;
+    notes?: string;
+  }) =>
+    request<BurnoutCheckin & { category: string }>("/burnout/checkins", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
   dashboard: () =>
     request<DashboardSummary>(`/dashboard?tz=${encodeURIComponent(browserTimezone())}`),
 

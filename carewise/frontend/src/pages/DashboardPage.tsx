@@ -26,6 +26,8 @@ export function DashboardPage() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
+  const [showCheckin, setShowCheckin] = useState(false);
+  const [checkinResult, setCheckinResult] = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -38,6 +40,17 @@ export function DashboardPage() {
   };
 
   useEffect(load, []);
+
+  const handleCheckinSaved = async (score: number, category: string) => {
+    setShowCheckin(false);
+    setCheckinResult(`Saved. Today's score is ${Math.round(score)} out of 100 (${category}).`);
+    // Refresh quietly so the score and trend update without a full-page spinner.
+    try {
+      setSummary(await api.dashboard());
+    } catch {
+      /* the saved check-in shows on the next load */
+    }
+  };
 
   if (loading) {
     return (
@@ -183,15 +196,7 @@ export function DashboardPage() {
                 </div>
                 <div className="text-xs text-ink-600">/ 100 — {summary.burnout_category}</div>
               </div>
-            ) : (
-              <Link
-                to="/app/chat"
-                state={{ initialPrompt: "I'd like to do a burnout check-in." }}
-                className="btn-ghost shrink-0"
-              >
-                Check in <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-              </Link>
-            )}
+            ) : null}
           </div>
 
           {trendData.length > 1 ? (
@@ -231,6 +236,36 @@ export function DashboardPage() {
             </p>
           )}
 
+          {checkinResult && !showCheckin && (
+            <p role="status" className="mt-4 rounded-lg bg-sage-50 p-3 text-sm text-sage-700">
+              {checkinResult}
+            </p>
+          )}
+
+          {showCheckin ? (
+            <BurnoutCheckinForm onSaved={handleCheckinSaved} onCancel={() => setShowCheckin(false)} />
+          ) : (
+            <div className="mt-5 flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => {
+                  setCheckinResult(null);
+                  setShowCheckin(true);
+                }}
+                className="btn-primary"
+              >
+                <Battery className="h-4 w-4" aria-hidden="true" />
+                {summary.latest_burnout_score === null ? "Do a check-in" : "New check-in"}
+              </button>
+              <Link
+                to="/app/chat"
+                state={{ initialPrompt: "I'd like to do a burnout check-in." }}
+                className="btn-ghost"
+              >
+                Or talk it through in chat <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+              </Link>
+            </div>
+          )}
+
           {summary.burnout_category &&
             ["high", "very high"].includes(summary.burnout_category) && (
               <div className="mt-5 rounded-lg bg-clay-50 border border-clay-200 p-3 text-sm text-ink-800">
@@ -241,6 +276,158 @@ export function DashboardPage() {
             )}
         </div>
 
+      </div>
+    </div>
+  );
+}
+
+function BurnoutCheckinForm({
+  onSaved,
+  onCancel,
+}: {
+  onSaved: (score: number, category: string) => void;
+  onCancel: () => void;
+}) {
+  const [sleepHours, setSleepHours] = useState("");
+  const [stress, setStress] = useState(5);
+  const [energy, setEnergy] = useState(5);
+  const [selfCareMinutes, setSelfCareMinutes] = useState("");
+  const [notes, setNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await api.createBurnoutCheckin({
+        sleep_hours: Number(sleepHours),
+        stress_level: stress,
+        energy_level: energy,
+        self_care_minutes: Number(selfCareMinutes),
+        notes: notes.trim() || undefined,
+      });
+      onSaved(res.burnout_score, res.category);
+    } catch {
+      setError("Couldn't save your check-in. Please check your connection and try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      aria-label="Burnout check-in"
+      className="mt-5 animate-slide-up space-y-4 rounded-xl border border-sand-200 bg-sand-50 p-4"
+    >
+      <p className="text-sm text-ink-700">Four quick questions about today. There are no wrong answers.</p>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <label htmlFor="checkin-sleep" className="mb-1 block text-xs font-medium text-ink-600">
+            Hours of sleep last night
+          </label>
+          <input
+            id="checkin-sleep"
+            autoFocus
+            required
+            type="number"
+            inputMode="decimal"
+            min={0}
+            max={24}
+            step={0.5}
+            className="input-field"
+            placeholder="e.g. 6"
+            value={sleepHours}
+            onChange={(e) => setSleepHours(e.target.value)}
+          />
+        </div>
+        <div>
+          <label htmlFor="checkin-selfcare" className="mb-1 block text-xs font-medium text-ink-600">
+            Minutes spent just on you today
+          </label>
+          <input
+            id="checkin-selfcare"
+            required
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={1440}
+            step={1}
+            className="input-field"
+            placeholder="e.g. 15 (0 is fine)"
+            value={selfCareMinutes}
+            onChange={(e) => setSelfCareMinutes(e.target.value)}
+          />
+        </div>
+      </div>
+      <ScaleInput id="checkin-stress" label="Stress today" low="calm" high="overwhelmed" value={stress} onChange={setStress} />
+      <ScaleInput id="checkin-energy" label="Energy today" low="exhausted" high="full of energy" value={energy} onChange={setEnergy} />
+      <div>
+        <label htmlFor="checkin-notes" className="mb-1 block text-xs font-medium text-ink-600">
+          Anything else? <span className="font-normal">(optional)</span>
+        </label>
+        <input
+          id="checkin-notes"
+          type="text"
+          maxLength={1000}
+          className="input-field"
+          placeholder="e.g. rough night at the hospital"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+        />
+      </div>
+      {error && (
+        <p role="alert" className="text-sm text-clay-500">
+          {error}
+        </p>
+      )}
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={onCancel} className="btn-ghost">
+          Cancel
+        </button>
+        <button type="submit" disabled={submitting} className="btn-primary">
+          {submitting ? <Loader2 className="h-4 w-4 animate-spin" aria-label="Saving…" /> : "Save check-in"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function ScaleInput({
+  id,
+  label,
+  low,
+  high,
+  value,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  low: string;
+  high: string;
+  value: number;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div>
+      <label htmlFor={id} className="text-xs font-medium text-ink-600">
+        {label}: <span className="text-ink-900">{value}/10</span>
+      </label>
+      <input
+        id={id}
+        type="range"
+        min={1}
+        max={10}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        aria-valuetext={`${value} out of 10`}
+        className="mt-1 w-full accent-sage-600"
+      />
+      <div className="flex justify-between text-xs text-ink-600" aria-hidden="true">
+        <span>1 · {low}</span>
+        <span>10 · {high}</span>
       </div>
     </div>
   );
