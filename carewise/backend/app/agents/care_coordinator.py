@@ -141,6 +141,7 @@ class CareCoordinatorAgent(BaseAgent):
                 system=RESPONSE_SYSTEM + NOTHING_SAVED_NOTE,
                 messages=[*ctx.history[-4:], {"role": "user", "content": ctx.user_message}],
                 temperature=0.3,
+                stream=True,
             )
 
         return AgentResponse(

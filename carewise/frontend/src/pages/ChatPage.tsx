@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Send, Loader2, Sparkles, MessageCircle, History, Plus } from "lucide-react";
-import { api, APIError, type AgentTrace, type ConversationSummary, type MessageOut, type TurnTrace } from "../lib/api";
+import {
+  api, APIError, StreamUnavailable, type AgentTrace, type ChatResponse, type ConversationSummary, type MessageOut,
+  type TurnTrace,
+} from "../lib/api";
 import { AgentBadge } from "../components/AgentBadge";
 import { useAuth } from "../lib/auth";
 import { usePageTitle } from "../lib/usePageTitle";
@@ -14,6 +17,8 @@ interface DisplayMessage {
   trace?: AgentTrace[];
   riskLevel?: string | null;
   turn?: TurnTrace | null;
+  /** Still being written: a preview that the final reply will replace. */
+  streaming?: boolean;
   timestamp: Date;
 }
 
@@ -159,8 +164,26 @@ export function ChatPage() {
     setInput("");
     setLoading(true);
 
+    // The reply streams in as a preview (already safety-checked, a sentence at a time); the final
+    // reply from the server then replaces it. Until the first text arrives, the typing dots show.
+    const previewId = `preview-${Date.now()}`;
+    const showPreview = (delta: string) =>
+      setMessages((m) =>
+        m.some((msg) => msg.id === previewId)
+          ? m.map((msg) => (msg.id === previewId ? { ...msg, content: msg.content + delta } : msg))
+          : [...m, { id: previewId, role: "assistant", content: delta, streaming: true, timestamp: new Date() }]
+      );
+
     try {
-      const res = await api.chat(text, conversationId ?? undefined);
+      let res: ChatResponse;
+      try {
+        res = await api.chatStream(text, conversationId ?? undefined, showPreview);
+      } catch (err) {
+        // Only if the stream couldn't start at all (nothing reached the server) is it safe to send
+        // again the normal way; otherwise the message may already be saved, so report the error.
+        if (!(err instanceof StreamUnavailable)) throw err;
+        res = await api.chat(text, conversationId ?? undefined);
+      }
       if (conversationId === null) {
         // A new conversation was just created; show it in the history list.
         api.conversations().then(setConversations).catch(() => undefined);
@@ -176,11 +199,11 @@ export function ChatPage() {
         turn: res.turn,
         timestamp: new Date(),
       };
-      setMessages((m) => [...m, assistantMsg]);
+      setMessages((m) => [...m.filter((msg) => msg.id !== previewId), assistantMsg]);
     } catch (err) {
       // Take the unsent message back out of the thread and return it to the composer, so nothing
       // the person typed is lost and it's clear it wasn't delivered.
-      setMessages((m) => m.filter((msg) => msg.id !== userMsg.id));
+      setMessages((m) => m.filter((msg) => msg.id !== userMsg.id && msg.id !== previewId));
       setInput(text);
       setError(friendlyError(err));
     } finally {
@@ -240,7 +263,7 @@ export function ChatPage() {
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto scroll-fade">
-        <div className="mx-auto max-w-3xl px-4 py-8 md:px-6" role="log" aria-live="polite" aria-label="Conversation">
+        <div className="mx-auto max-w-3xl px-4 py-8 md:px-6" role="log" aria-live="polite" aria-label="Conversation" aria-busy={loading}>
           {!isEmpty && <h1 className="sr-only">Chat with CareWise</h1>}
 
           {/* With an empty thread, show errors up top so they aren't hidden below the suggestions. */}
@@ -285,7 +308,7 @@ export function ChatPage() {
             <MessageBubble key={m.id} message={m} prevRole={messages[i - 1]?.role} />
           ))}
 
-          {loading && (
+          {loading && !messages.some((m) => m.streaming) && (
             <div role="status" className="mt-6 flex items-start gap-3 animate-fade-in">
               <span className="sr-only">CareWise is replying…</span>
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sage-100 text-sage-700">
@@ -402,7 +425,12 @@ function MessageBubble({
               : "bg-white border border-sand-200 text-ink-900 shadow-soft"
           }`}
         >
-          <p className="whitespace-pre-wrap text-[15px] leading-relaxed">{renderInline(message.content)}</p>
+          <p className="whitespace-pre-wrap text-[15px] leading-relaxed">
+            {renderInline(message.content)}
+            {message.streaming && (
+              <span className="ml-0.5 inline-block h-4 w-1.5 translate-y-0.5 animate-pulse rounded-sm bg-sage-400" aria-hidden="true" />
+            )}
+          </p>
         </div>
         {message.turn && <TurnDetails turn={message.turn} />}
       </div>

@@ -10,6 +10,10 @@ function browserTimezone(): string {
   }
 }
 
+/** The streaming endpoint couldn't be reached at all (network, or an older backend without it).
+ * Safe to retry with the normal endpoint: nothing was sent to the server. */
+export class StreamUnavailable extends Error {}
+
 export class APIError extends Error {
   status: number;
   constructor(message: string, status: number) {
@@ -220,6 +224,59 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ message, conversation_id, timezone: browserTimezone() }),
     }),
+
+  /** Same turn as chat(), streamed: onDelta gets a preview as it's written (already through the
+   * safety filter, a sentence at a time); the resolved ChatResponse is the final, saved reply. */
+  chatStream: async (
+    message: string,
+    conversation_id: number | undefined,
+    onDelta: (text: string) => void
+  ): Promise<ChatResponse> => {
+    const token = getToken();
+    let res: Response;
+    try {
+      res = await fetch(`${API_BASE}/chat/stream`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ message, conversation_id, timezone: browserTimezone() }),
+      });
+    } catch {
+      throw new StreamUnavailable("network");
+    }
+    if (res.status === 404 || res.status === 405) throw new StreamUnavailable("no stream endpoint");
+    if (!res.ok) {
+      let detail = res.statusText;
+      try {
+        detail = (await res.json()).detail || detail;
+      } catch {
+        /* ignore */
+      }
+      throw new APIError(detail, res.status);
+    }
+    if (!res.body) throw new StreamUnavailable("no body");
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done });
+      let end: number;
+      while ((end = buffer.indexOf("\n\n")) !== -1) {
+        const block = buffer.slice(0, end);
+        buffer = buffer.slice(end + 2);
+        const event = block.match(/^event: (.*)$/m)?.[1];
+        const data = JSON.parse(block.match(/^data: (.*)$/m)?.[1] ?? "{}");
+        if (event === "delta") onDelta(data.text);
+        else if (event === "done") return data as ChatResponse;
+        else if (event === "error") throw new APIError(data.detail ?? "Something went wrong", data.status ?? 500);
+      }
+      if (done) throw new APIError("The reply was interrupted. Please try again.", 502);
+    }
+  },
 
   conversations: () => request<ConversationSummary[]>("/chat/conversations"),
 

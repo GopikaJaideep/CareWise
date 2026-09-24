@@ -116,6 +116,7 @@ class SymptomTrackerAgent(BaseAgent):
                 system=RESPONSE_SYSTEM + NOTHING_SAVED_NOTE,
                 messages=[*ctx.history[-4:], {"role": "user", "content": ctx.user_message}],
                 temperature=0.3,
+                stream=True,
             )
 
         return AgentResponse(
@@ -159,6 +160,7 @@ class SymptomTrackerAgent(BaseAgent):
             system=RESPONSE_SYSTEM,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
+            stream=True,
         )
 
     async def _compose_response(self, ctx: SessionContext, confirmation: str) -> str:
@@ -172,4 +174,5 @@ class SymptomTrackerAgent(BaseAgent):
             system=RESPONSE_SYSTEM,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.4,
+            stream=True,
         )

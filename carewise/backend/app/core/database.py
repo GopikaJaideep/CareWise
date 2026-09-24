@@ -79,6 +79,12 @@ async def init_db() -> None:
         await conn.run_sync(upgrade_to_head)
 
 
+def get_session_factory():
+    """For code that must open its own session, e.g. a streaming response that outlives the
+    request-scoped get_db session. Overridable in tests."""
+    return SessionLocal
+
+
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async with SessionLocal() as session:
         try:
