@@ -54,9 +54,11 @@ def build_gemini_payload(
     generation_config: dict[str, Any] = {"maxOutputTokens": max_tokens, "temperature": temperature}
     if json_mode:
         generation_config["responseMimeType"] = "application/json"
-    if "2.5-flash" in model:
-        # Thinking tokens count against maxOutputTokens and can starve the
-        # actual reply; these prompts don't need extended reasoning.
+    if "flash" in model:
+        # Thinking tokens count against maxOutputTokens and can starve the actual reply: with
+        # gemini-3.6-flash a short answer used ~500 of 1024 tokens on thinking, and longer answers
+        # were cut off mid-sentence. These prompts don't need extended reasoning. (Every Flash
+        # model, not just 2.5: that narrower check is how 3.x replies got truncated.)
         generation_config["thinkingConfig"] = {"thinkingBudget": 0}
 
     return {
@@ -168,6 +170,10 @@ class LLMClient:
                 finish, data.get("promptFeedback"),
             )
             return ERROR_MESSAGE
+        finish = (data.get("candidates") or [{}])[0].get("finishReason")
+        if finish == "MAX_TOKENS":
+            # Still return the partial reply, but make truncation visible in the logs.
+            logger.warning("Gemini reply hit maxOutputTokens and was cut off (usage=%s)", data.get("usageMetadata"))
         return text
 
     async def _gemini_request(self, payload: dict[str, Any]) -> dict[str, Any]:
