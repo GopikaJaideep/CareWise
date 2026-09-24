@@ -5,13 +5,13 @@ about a 6 out of 10") and maintains the symptom/medication ledger.
 """
 from __future__ import annotations
 
-import re
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.base import AgentName, AgentResponse, BaseAgent, SessionContext
+from app.agents.outputs import SymptomExtraction, parse_severity  # noqa: F401  (parse_severity re-exported for evals)
 from app.models.db import Medication, SymptomLog
 from app.services.llm import get_llm_client
 
@@ -44,25 +44,6 @@ NOTHING_SAVED_NOTE = (
 )
 
 
-def parse_severity(value) -> int | None:
-    """Model output -> 1-10, or None if it isn't a usable number.
-
-    Handles "6", 6, 6.5 and "6/10". Rejects out-of-range values (0, 15) rather than
-    saving a severity the app's 1-10 scale can't represent.
-    """
-    if isinstance(value, bool) or value is None:
-        return None
-    if isinstance(value, (int, float)):
-        number = float(value)
-    else:
-        match = re.match(r"\s*(\d+(?:\.\d+)?)", str(value))
-        if not match:
-            return None
-        number = float(match.group(1))
-    severity = round(number)
-    return severity if 1 <= severity <= 10 else None
-
-
 class SymptomTrackerAgent(BaseAgent):
     name = AgentName.SYMPTOM_TRACKER
     description = "Logs symptoms, medications, and surfaces patterns over time."
@@ -77,11 +58,12 @@ class SymptomTrackerAgent(BaseAgent):
 
         Separate from handle() so the eval suite can score extraction on its own.
         """
-        return await self.llm.complete_json(
+        result = await self.llm.complete_structured(
             system=EXTRACTION_SYSTEM,
             messages=[{"role": "user", "content": message}],
-            schema_hint='{"symptoms": [...], "medications": [...], "query": str|null, "confidence": float}',
+            output=SymptomExtraction,
         )
+        return result.model_dump() if result else {}
 
     async def handle(self, ctx: SessionContext) -> AgentResponse:
         # Step 1: Extract structured data

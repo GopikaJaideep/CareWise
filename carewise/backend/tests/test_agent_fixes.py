@@ -8,9 +8,10 @@ from app.agents.orchestrator import Orchestrator
 from app.agents.symptom_tracker import SymptomTrackerAgent, parse_severity
 from app.core.safety import detect_crisis
 from app.models.db import CareTask, SymptomLog
+from tests.fakes import StructuredFromJson
 
 
-class FakeLLM:
+class FakeLLM(StructuredFromJson):
     """Scripted stand-in for the LLM client; records what each call was sent."""
 
     provider = "fake"

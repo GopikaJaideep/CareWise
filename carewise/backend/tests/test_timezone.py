@@ -7,6 +7,7 @@ from app.agents.base import SessionContext
 from app.agents.care_coordinator import CareCoordinatorAgent
 from app.core.tz import day_bounds_utc, parse_due_at, resolve_timezone, to_local, tz_label
 from app.models.db import CareTask
+from tests.fakes import StructuredFromJson
 
 SYDNEY = resolve_timezone("Australia/Sydney")  # UTC+10 in June, UTC+11 in summer (DST)
 UTC = timezone.utc
@@ -71,7 +72,7 @@ class TestToLocal:
         assert to_local(datetime(2026, 6, 22, 0, 0), SYDNEY).hour == 10
 
 
-class RecordingLLM:
+class RecordingLLM(StructuredFromJson):
     def __init__(self, extraction):
         self.extraction = extraction
         self.system_prompts = []

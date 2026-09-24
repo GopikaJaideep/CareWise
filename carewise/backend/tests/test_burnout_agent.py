@@ -4,9 +4,10 @@ from sqlalchemy import select
 from app.agents.base import SessionContext
 from app.agents.burnout_monitor import BurnoutMonitorAgent
 from app.models.db import BurnoutCheckin
+from tests.fakes import StructuredFromJson
 
 
-class FakeLLM:
+class FakeLLM(StructuredFromJson):
     def __init__(self, extraction):
         self.extraction = extraction
 

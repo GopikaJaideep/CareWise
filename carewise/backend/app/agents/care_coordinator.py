@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.base import AgentName, AgentResponse, BaseAgent, SessionContext
+from app.agents.outputs import TaskExtraction
 from app.core.tz import parse_due_at, resolve_timezone, to_local, tz_label
 from app.models.db import CareTask
 from app.services.llm import get_llm_client
@@ -71,11 +72,12 @@ class CareCoordinatorAgent(BaseAgent):
             .replace("{now}", local_now.strftime("%A %Y-%m-%d %H:%M"))
             .replace("{tz}", tz_label(tz))
         )
-        return await self.llm.complete_json(
+        result = await self.llm.complete_structured(
             system=system,
             messages=[{"role": "user", "content": message}],
-            schema_hint='{"tasks": [...], "query": str|null, "mark_done": [...]}',
+            output=TaskExtraction,
         )
+        return result.model_dump() if result else {}
 
     async def handle(self, ctx: SessionContext) -> AgentResponse:
         tz = resolve_timezone(ctx.metadata.get("timezone"))

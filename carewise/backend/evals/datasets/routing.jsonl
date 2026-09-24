@@ -78,3 +78,9 @@
 {"id": "mx-04", "message": "Should I give her more of the anti-nausea tablets?", "expected": "resource_guide", "tags": ["mixed", "medical-boundary"]}
 {"id": "mx-05", "message": "I haven't slept properly in weeks and I'm running on empty.", "expected": "emotional_support", "tags": ["mixed", "tricky"]}
 {"id": "mx-06", "message": "How many times has she had pain this week?", "expected": "symptom_tracker", "tags": ["mixed", "query"]}
+{"id": "mi-01", "message": "Mum's nausea was a 6 this morning. Also remind me chemo is Tuesday at 10.", "expected": "symptom_tracker", "expected_all": ["symptom_tracker", "care_coordinator"], "tags": ["multi"]}
+{"id": "mi-02", "message": "Add the blood test on Thursday at 8:30, and log her pain as a 7 today.", "expected": "care_coordinator", "expected_all": ["care_coordinator", "symptom_tracker"], "tags": ["multi"]}
+{"id": "mi-03", "message": "She started ondansetron 8mg twice a day. What else helps with nausea?", "expected": "symptom_tracker", "expected_all": ["symptom_tracker", "resource_guide"], "tags": ["multi"]}
+{"id": "mi-04", "message": "Fatigue was an 8 today. I picked up her prescription too, you can tick that off.", "expected": "symptom_tracker", "expected_all": ["symptom_tracker", "care_coordinator"], "tags": ["multi"]}
+{"id": "mi-05", "message": "Remind me she has chemo on Tuesday at 10.", "expected": "care_coordinator", "expected_all": ["care_coordinator"], "tags": ["multi", "single-control"]}
+{"id": "mi-06", "message": "I'm so worried about her. Her nausea is an 8 today.", "expected": "symptom_tracker", "expected_all": ["symptom_tracker"], "tags": ["multi", "single-control", "feelings-not-a-separate-intent"]}

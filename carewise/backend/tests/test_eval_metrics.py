@@ -9,6 +9,7 @@ from evals.metrics import (
     binary_report, classification_report, extraction_summary, percentile, score_medications,
     score_symptoms, score_tasks,
 )
+from tests.fakes import StructuredFromJson
 
 SYDNEY = ZoneInfo("Australia/Sydney")
 DATASETS = Path(__file__).resolve().parents[1] / "evals" / "datasets"
@@ -93,7 +94,7 @@ def test_datasets_are_valid_jsonl_with_unique_ids(name):
     assert len(ids) == len(set(ids)) and len(rows) >= 18
 
 
-class _FakeModel:
+class _FakeModel(StructuredFromJson):
     provider, model = "fake", "fake-model"
 
     async def complete_json(self, system, messages, schema_hint, max_tokens=None):
