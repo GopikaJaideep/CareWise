@@ -28,7 +28,7 @@ class User(Base):
     care_recipient_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     care_recipient_relation: Mapped[str | None] = mapped_column(String(60), nullable=True)
     diagnosis_context: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     conversations: Mapped[list["Conversation"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     symptom_logs: Mapped[list["SymptomLog"]] = relationship(back_populates="user", cascade="all, delete-orphan")
@@ -45,7 +45,7 @@ class Conversation(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     title: Mapped[str] = mapped_column(String(200), default="New conversation")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     user: Mapped["User"] = relationship(back_populates="conversations")
     messages: Mapped[list["Message"]] = relationship(
@@ -63,7 +63,7 @@ class Message(Base):
     agent_used: Mapped[str | None] = mapped_column(String(50), nullable=True)
     risk_level: Mapped[str | None] = mapped_column(String(20), nullable=True)
     meta: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     conversation: Mapped["Conversation"] = relationship(back_populates="messages")
 
@@ -76,7 +76,7 @@ class SymptomLog(Base):
     symptom: Mapped[str] = mapped_column(String(120))
     severity: Mapped[int] = mapped_column(Integer)  # 1-10
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    logged_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    logged_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     user: Mapped["User"] = relationship(back_populates="symptom_logs")
 
@@ -91,7 +91,7 @@ class Medication(Base):
     schedule: Mapped[str] = mapped_column(String(120))  # e.g. "8am, 8pm" or "every 6 hours"
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     user: Mapped["User"] = relationship(back_populates="medications")
 
@@ -103,11 +103,11 @@ class CareTask(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     title: Mapped[str] = mapped_column(String(200))
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
-    due_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed: Mapped[bool] = mapped_column(Boolean, default=False)
     category: Mapped[str] = mapped_column(String(60), default="general")  # appointment | medication | errand | general
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
-    reminded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    reminded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     user: Mapped["User"] = relationship(back_populates="tasks")
 
@@ -123,7 +123,7 @@ class BurnoutCheckin(Base):
     self_care_minutes: Mapped[int] = mapped_column(Integer, default=0)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     burnout_score: Mapped[float] = mapped_column(Float)  # computed 0-100
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     user: Mapped["User"] = relationship(back_populates="burnout_checkins")
 
@@ -137,7 +137,7 @@ class PushSubscription(Base):
     endpoint: Mapped[str] = mapped_column(Text, unique=True)
     p256dh: Mapped[str] = mapped_column(String(255))
     auth: Mapped[str] = mapped_column(String(255))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     last_morning_reminder_date: Mapped[str | None] = mapped_column(String(10), nullable=True)  # "YYYY-MM-DD"
 
     user: Mapped["User"] = relationship(back_populates="push_subscriptions")
@@ -155,8 +155,8 @@ class PasswordResetToken(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     used: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     user: Mapped["User"] = relationship(back_populates="reset_tokens")
