@@ -3,11 +3,15 @@
 This agent does NOT use the LLM for crisis responses. It returns a deterministic,
 audited response with verified resources. This is intentional: we never want
 LLM creativity in a crisis path.
+
+It is reached two ways: the keyword check (app/core/safety.py) or the AI risk screen
+(app/core/risk.py). The screen can only decide THAT this path is taken, and whether the person at
+risk is the writer or someone else; the words of the reply are always the fixed text.
 """
 from __future__ import annotations
 
 from app.agents.base import AgentName, AgentResponse, BaseAgent, SessionContext
-from app.core.safety import detect_crisis, _format_crisis_response
+from app.core.safety import _format_crisis_response, _format_third_party_crisis_response, detect_crisis
 
 
 class SafetyAgent(BaseAgent):
@@ -21,14 +25,20 @@ class SafetyAgent(BaseAgent):
         check = detect_crisis(ctx.user_message)
         # Default to AU resources; in production, this would use user profile
         region = ctx.user_profile.get("region", "AU")
-        content = _format_crisis_response(region=region)
+        risk = ctx.metadata.get("risk") or {}
+        someone_else = not check.requires_intervention and risk.get("who") in ("care_recipient", "other")
+        content = (
+            _format_third_party_crisis_response(region=region) if someone_else else _format_crisis_response(region=region)
+        )
 
         return AgentResponse(
             agent=self.name,
             content=content,
             metadata={
-                "risk_level": check.risk_level.value,
+                "risk_level": "critical",
+                "detected_by": "keyword" if check.requires_intervention else "ai_screen",
                 "triggers": check.triggers,
+                "at_risk": "someone_else" if someone_else else "writer",
                 "deterministic": True,
             },
         )

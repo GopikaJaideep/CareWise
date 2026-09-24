@@ -27,6 +27,7 @@ from app.agents.care_coordinator import CareCoordinatorAgent
 from app.agents.orchestrator import Orchestrator
 from app.agents.symptom_tracker import SymptomTrackerAgent
 from app.core.config import get_settings
+from app.core.risk import assess_risk
 from app.core.safety import detect_crisis
 from app.core.tracing import start_trace
 from app.services.llm import LLMClient, get_llm_client
@@ -85,7 +86,9 @@ class Timer:
         return {"p50_s": round(percentile(self.samples, 50), 3), "p95_s": round(percentile(self.samples, 95), 3)}
 
 
-async def run_crisis(cases: list[dict], _llm, _delay) -> dict[str, Any]:
+async def run_crisis(cases: list[dict], llm, delay: float) -> dict[str, Any]:
+    """Keyword detector always. With a model, also the full safety net as the app runs it:
+    keyword OR AI risk screen (app/core/risk.py), reported side by side."""
     rows = []
     for case in cases:
         check = detect_crisis(case["message"])
@@ -94,6 +97,28 @@ async def run_crisis(cases: list[dict], _llm, _delay) -> dict[str, Any]:
     report["layer"] = "keyword detector (deterministic)"
     report["misses"] = [r for r in rows if r["crisis"] and not r["predicted"]]
     report["false_alarms"] = [r for r in rows if not r["crisis"] and r["predicted"]]
+
+    if getattr(llm, "provider", None) is not None:
+        timer = Timer()
+        combined = []
+        for row in rows:
+            if row["predicted"]:  # the app never asks the model when a keyword already matched
+                combined.append({**row, "combined": True, "screen": "skipped"})
+                continue
+            risk = await timer.run(assess_risk(llm, row["message"]), row["id"])
+            await asyncio.sleep(delay)
+            if timer.last_failed:
+                continue
+            combined.append({**row, "combined": risk.level == "crisis", "screen": risk.level, "who": risk.who})
+        with_screen = binary_report((r["crisis"], r["combined"]) for r in combined)
+        with_screen.update(
+            layer="keyword + AI risk screen",
+            latency=timer.summary(),
+            errors=timer.errors,
+            misses=[r for r in combined if r["crisis"] and not r["combined"]],
+            false_alarms=[r for r in combined if not r["crisis"] and r["combined"]],
+        )
+        report["with_ai_screen"] = with_screen
     return {"report": report, "cases": rows}
 
 
@@ -227,6 +252,13 @@ async def run_retrieval(cases: list[dict], _llm, delay: float) -> dict[str, Any]
     return {"report": reports, "cases": all_rows}
 
 
+def model_errors(report: Any) -> list[str]:
+    """Case ids whose model call failed, wherever the suite keeps them."""
+    if not isinstance(report, dict):
+        return []
+    return report.get("errors") or (report.get("with_ai_screen") or {}).get("errors", [])
+
+
 RUNNERS = {"crisis": run_crisis, "retrieval": run_retrieval, "routing": run_routing, "symptoms": run_symptoms, "tasks": run_tasks}
 
 
@@ -247,6 +279,17 @@ def render_markdown(meta: dict, results: dict[str, dict]) -> str:
             lines += ["Missed crises:", *[f"- `{m['id']}` {m['message']}" for m in r["misses"]], ""]
         if r["false_alarms"]:
             lines += ["False alarms:", *[f"- `{m['id']}` {m['message']} (matched: {', '.join(m['triggers'])})" for m in r["false_alarms"]], ""]
+        s = r.get("with_ai_screen")
+        if s:
+            lines += [
+                f"With the AI risk screen ({s['layer']}), {s['n']} cases, screen latency p50 {s['latency']['p50_s']}s:", "",
+                "| Recall (crises caught) | False-positive rate | Precision |", "|---|---|---|",
+                f"| {pct(s['recall'])} ({s['tp']}/{s['tp'] + s['fn']}) | {pct(s['false_positive_rate'])} ({s['fp']}/{s['fp'] + s['tn']}) | {pct(s['precision'])} |", "",
+            ]
+            if s["misses"]:
+                lines += ["Still missed:", *[f"- `{m['id']}` {m['message']}" for m in s["misses"]], ""]
+            if s["false_alarms"]:
+                lines += ["False alarms:", *[f"- `{m['id']}` {m['message']}" for m in s["false_alarms"]], ""]
     if "retrieval" in results:
         lines += ["## Retrieval (resource guide)", "", "| Search | Hit@1 | Recall@4 | MRR | Real questions refused | Off-topic refused | p50 |",
                   "|---|---|---|---|---|---|---|"]
@@ -283,10 +326,7 @@ def render_markdown(meta: dict, results: dict[str, dict]) -> str:
                   f"Latency p50 {r['latency']['p50_s']}s.", ""]
         if r["failures"]:
             lines += ["Incorrect:", *[f"- `{f['id']}` {f['message']} → {f['score']['tasks'] or f['extracted']}" for f in r["failures"]], ""]
-    excluded = {
-        name: r["report"]["errors"] for name, r in results.items()
-        if isinstance(r["report"], dict) and r["report"].get("errors")
-    }
+    excluded = {name: model_errors(r["report"]) for name, r in results.items() if model_errors(r["report"])}
     if excluded:
         lines += ["## Excluded cases", "These cases hit an API error (quota, outage, blocked reply) and were not scored:",
                   *[f"- {name}: {', '.join(ids)}" for name, ids in excluded.items()], ""]
@@ -339,7 +379,7 @@ async def main(argv: list[str] | None = None) -> int:
         print(f"running {suite}...", file=sys.stderr)
         cases = load(suite, args.limit)
         results[suite] = await RUNNERS[suite](cases, llm, args.delay)
-        errors = results[suite]["report"].get("errors", []) if isinstance(results[suite]["report"], dict) else []
+        errors = model_errors(results[suite]["report"])
         if cases and len(errors) / len(cases) > MAX_ERROR_RATE:
             print(
                 f"Aborted: {len(errors)} of {len(cases)} {suite} cases failed at the API (quota, outage or "

@@ -57,6 +57,13 @@ class EmotionalSupportAgent(BaseAgent):
             care_context=care_context,
             burnout_signal=burnout_signal,
         )
+        if ctx.metadata.get("risk_concern"):
+            # Set by the AI risk screen (app/core/risk.py): serious distress, not a crisis.
+            system += (
+                "\nThe safety screen noticed serious distress in this message. Acknowledge it gently, "
+                "ask how they are holding up, and mention once, without alarm, that Lifeline "
+                "(13 11 14) is there 24/7 if they want to talk to someone.\n"
+            )
 
         messages = list(ctx.history) + [{"role": "user", "content": ctx.user_message}]
         text = await self.llm.complete(system=system, messages=messages, temperature=0.75)

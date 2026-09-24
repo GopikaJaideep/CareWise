@@ -148,6 +148,31 @@ def _format_crisis_response(region: str = "AU") -> str:
     return "\n".join(lines)
 
 
+def _format_third_party_crisis_response(region: str = "AU") -> str:
+    """For when the person at risk is someone else, usually the person being cared for.
+
+    Fixed text like _format_crisis_response: what to do for them, and support for the carer.
+    """
+    resources = CRISIS_RESOURCES.get(region, CRISIS_RESOURCES["AU"])
+    emergency = "000 (Australia)" if region == "AU" else "your local emergency number"
+    lines = [
+        "What you're describing sounds serious, and it's important they get support now.",
+        "",
+        f"If they are in immediate danger, or may have taken something or hurt themselves, call {emergency} straight away and stay with them if it's safe to.",
+        "",
+        "These free services can help you work out what to do, and support you too:",
+        "",
+    ]
+    for name, contact in resources.items():
+        lines.append(f"  • {name}: {contact}")
+    lines.extend([
+        "  • Their treatment team or GP: let them know today.",
+        "",
+        "This is a lot to carry. Please look after yourself as well; I'm here if you want to talk it through.",
+    ])
+    return "\n".join(lines)
+
+
 def redact_pii(text: str) -> str:
     """Redact obvious PII for safe logging. Not a substitute for proper PII handling."""
     # Phone numbers (US 555-555-5555, AU mobile 0412 345 678, international)

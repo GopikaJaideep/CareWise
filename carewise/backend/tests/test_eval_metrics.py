@@ -133,3 +133,23 @@ async def test_an_api_outage_aborts_the_run_instead_of_scoring_it(monkeypatch, c
     monkeypatch.setattr(run, "get_llm_client", lambda: _OutageModel())
     assert await run.main(["--no-write", "--suite", "routing", "--limit", "5"]) == 2
     assert "Aborted: 5 of 5 routing cases failed at the API" in capsys.readouterr().err
+
+
+class _ScreeningModel(_FakeModel):
+    """Flags every message the keyword list doesn't already catch as a crisis."""
+
+    async def complete_json(self, system, messages, schema_hint, max_tokens=None):
+        if "screen messages" in system:
+            return {"level": "crisis", "who": "self"}
+        return await super().complete_json(system, messages, schema_hint, max_tokens)
+
+
+async def test_crisis_suite_reports_keyword_and_ai_screen_side_by_side(monkeypatch, capsys):
+    from evals import run
+
+    monkeypatch.setattr(run, "get_llm_client", lambda: _ScreeningModel())
+    assert await run.main(["--no-write", "--suite", "crisis"]) == 0
+    out = capsys.readouterr().out
+    assert "With the AI risk screen" in out
+    # A screen that flags everything catches every crisis (recall 100%) but raises false alarms:
+    assert "| 100.0% (24/24) |" in out
