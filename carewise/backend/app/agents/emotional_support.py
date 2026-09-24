@@ -57,6 +57,14 @@ class EmotionalSupportAgent(BaseAgent):
             care_context=care_context,
             burnout_signal=burnout_signal,
         )
+        memories = ctx.user_profile.get("memories") or []
+        if memories:
+            # Remembered from earlier chats (opt-in; see app/services/memory.py).
+            system += (
+                "\nWhat you know about this caregiver from earlier chats. Use it naturally where it helps; "
+                "never recite the list or announce that you remember things:\n"
+                + "\n".join(f"- {m}" for m in memories) + "\n"
+            )
         if ctx.metadata.get("risk_concern"):
             # Set by the AI risk screen (app/core/risk.py): serious distress, not a crisis.
             system += (

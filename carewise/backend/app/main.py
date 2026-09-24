@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import auth_routes, chat_routes, tracking_routes
+from app.api import auth_routes, chat_routes, memory_routes, tracking_routes
 from app.core.config import get_settings
 from app.core.database import init_db
 from app.services.retrieval import get_retriever
@@ -52,6 +52,7 @@ app.add_middleware(
 app.include_router(auth_routes.router)
 app.include_router(chat_routes.router)
 app.include_router(tracking_routes.router)
+app.include_router(memory_routes.router)
 
 
 @app.get("/")

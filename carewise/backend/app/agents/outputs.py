@@ -193,3 +193,29 @@ class RiskOutput(BaseModel):
     def known_who(cls, v: Any) -> str:
         v = str(v or "unknown").lower()
         return v if v in ("self", "care_recipient", "other") else "unknown"
+
+
+# --- Memory ---------------------------------------------------------------------------------------
+
+MemoryCategory = Literal["care_recipient", "caregiver", "care_team", "routine", "what_helps", "other"]
+
+
+class MemoryItem(BaseModel):
+    text: str = Field(min_length=3, max_length=300)
+    category: MemoryCategory = "other"
+
+    @field_validator("category", mode="before")
+    @classmethod
+    def known_category(cls, v: Any) -> str:
+        v = str(v or "other").lower()
+        return v if v in ("care_recipient", "caregiver", "care_team", "routine", "what_helps") else "other"
+
+
+class MemoryUpdate(BaseModel):
+    add: list[MemoryItem] = []
+    remove: list[int] = []  # ids of remembered facts that are now wrong or outdated
+
+    @field_validator("add", "remove", mode="before")
+    @classmethod
+    def null_is_empty(cls, v: Any) -> Any:
+        return [] if v is None else v

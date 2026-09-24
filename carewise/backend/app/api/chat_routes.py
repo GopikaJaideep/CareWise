@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.agents.base import SessionContext
+from app.agents.base import AgentName, SessionContext
 from app.agents.orchestrator import Orchestrator
 from app.api.schemas import (
     AgentTrace, ChatRequest, ChatResponse, ConversationOut, ConversationSummary, MessageOut,
@@ -21,6 +21,7 @@ from app.core.database import get_db, get_session_factory
 from app.core.safety import redact_pii, validate_response
 from app.core.streaming import ReplySink, open_sink
 from app.core.tracing import start_trace
+from app.services import memory
 from app.models.db import BurnoutCheckin, Conversation, Message, User
 
 logger = logging.getLogger(__name__)
@@ -158,6 +159,9 @@ async def run_chat_turn(payload: ChatRequest, current_user: User, db: AsyncSessi
             "care_recipient_name": current_user.care_recipient_name,
             "care_recipient_relation": current_user.care_recipient_relation,
             "diagnosis_context": current_user.diagnosis_context,
+            # Facts remembered from earlier chats, only if the person turned memory on.
+            "memories": [m.text for m in await memory.load_memories(db, current_user.id)]
+            if current_user.memory_enabled else [],
         },
         history=history,
         metadata={
@@ -169,6 +173,8 @@ async def run_chat_turn(payload: ChatRequest, current_user: User, db: AsyncSessi
 
     # Run orchestration, tracing routing, agents and every model call for this turn.
     with start_trace() as trace:
+        if ctx.user_profile["memories"]:
+            trace.extra["memories_used"] = len(ctx.user_profile["memories"])
         orchestrator = Orchestrator(db)
         responses = await orchestrator.run(ctx)
         final_text = orchestrator.synthesize(responses)
@@ -207,6 +213,10 @@ async def run_chat_turn(payload: ChatRequest, current_user: User, db: AsyncSessi
     db.add(assistant_msg)
     await db.commit()
     await db.refresh(assistant_msg)
+
+    # Update what CareWise remembers, in the background (never delays the reply; skipped for
+    # turns that reached the safety response, and when memory is off).
+    memory.after_turn(current_user, conversation.id, any(r.agent == AgentName.SAFETY for r in responses))
 
     return ChatResponse(
         conversation_id=conversation.id,

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from enum import Enum
 
 from sqlalchemy import (
-    Boolean, DateTime, Float, ForeignKey, Integer, String, Text, JSON,
+    Boolean, DateTime, Float, ForeignKey, Integer, String, Text, JSON, false,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -28,6 +28,8 @@ class User(Base):
     care_recipient_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     care_recipient_relation: Mapped[str | None] = mapped_column(String(60), nullable=True)
     diagnosis_context: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Opt-in: CareWise only remembers facts between chats once the person turns this on.
+    memory_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     conversations: Mapped[list["Conversation"]] = relationship(back_populates="user", cascade="all, delete-orphan")
@@ -37,6 +39,7 @@ class User(Base):
     burnout_checkins: Mapped[list["BurnoutCheckin"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     push_subscriptions: Mapped[list["PushSubscription"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     reset_tokens: Mapped[list["PasswordResetToken"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    memories: Mapped[list["UserMemory"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
 class Conversation(Base):
@@ -180,3 +183,20 @@ class KnowledgeEmbedding(Base):
     model: Mapped[str] = mapped_column(String(100), primary_key=True)
     vector: Mapped[list] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class UserMemory(Base):
+    """A durable fact CareWise remembers between chats, e.g. "Mum has chemo every third Tuesday".
+
+    Only stored when the person has turned memory on; always visible and deletable by them.
+    See app/services/memory.py for what is (and is never) stored.
+    """
+    __tablename__ = "user_memories"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    text: Mapped[str] = mapped_column(String(300))
+    category: Mapped[str] = mapped_column(String(30), default="other")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    user: Mapped["User"] = relationship(back_populates="memories")

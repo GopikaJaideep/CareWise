@@ -12,6 +12,7 @@ import { useAuth } from "../lib/auth";
 import { disablePushReminders, enablePushReminders, pushPermission } from "../lib/push";
 import { AnimatedNumber } from "../components/AnimatedNumber";
 import { usePageTitle } from "../lib/usePageTitle";
+import { MemoryCard } from "../components/MemoryCard";
 
 const STARTERS = [
   "Mum had nausea this morning, around a 6.",
@@ -288,6 +289,7 @@ export function DashboardPage() {
             )}
         </div>
 
+        <MemoryCard />
       </div>
     </div>
   );
