@@ -10,6 +10,7 @@ Architecture:
 from __future__ import annotations
 
 import logging
+import re
 from typing import Iterable
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,7 +42,19 @@ Available agents:
 - "burnout_monitor": doing a check-in on their own wellbeing, or asking how they're doing
 
 If unclear, prefer "emotional_support" — it's the safest default.
+
+Earlier turns may be included for context. Classify the LAST user message: a short reply such as
+"6 hours, stress 7" or "yes" belongs to whatever the assistant just asked about.
 """
+
+# Messages that ask for information, rather than asking CareWise to do something. They skip the
+# keyword shortcuts below, so "What is caregiver burnout?" reaches the resource guide instead of
+# starting a check-in, and "How do I prepare for an appointment?" doesn't create a task.
+_QUESTION = re.compile(
+    r"^\s*(what|how|why|when|where|who|which|is|are|can|could|should|would|does|do|will)\b", re.I
+)
+_AFFIRMATIVE = {"yes", "yeah", "yep", "sure", "ok", "okay", "please", "yes please", "go on", "lets do it"}
+HISTORY_TURNS_FOR_ROUTING = 4
 
 
 class Orchestrator:
@@ -93,17 +106,30 @@ class Orchestrator:
         return ctx.agent_outputs
 
     async def _classify_intent(self, ctx: SessionContext) -> AgentName:
-        # Quick heuristic shortcuts (cheap, deterministic)
-        msg = ctx.user_message.lower()
-        if any(kw in msg for kw in ["check in", "check-in", "how am i doing", "burnout"]):
+        msg = ctx.user_message.lower().strip()
+
+        # 1. Answering a check-in the burnout monitor just asked for: numbers, or "yes" to its offer.
+        #    Without this the reply ("6 hours, stress 7...") was classified alone and often went to
+        #    the symptom tracker.
+        if ctx.metadata.get("last_agent") == AgentName.BURNOUT_MONITOR.value and (
+            len(re.findall(r"\d+", msg)) >= 2 or msg.rstrip(".!") in _AFFIRMATIVE
+        ):
             return AgentName.BURNOUT_MONITOR
-        if any(kw in msg for kw in ["remind me", "appointment", "add task", "to-do", "todo"]):
+
+        # 2. Cheap deterministic shortcuts, for requests only (see _QUESTION).
+        is_question = bool(_QUESTION.match(msg))
+        if any(kw in msg for kw in ["check in", "check-in", "checkin", "how am i doing"]):
+            return AgentName.BURNOUT_MONITOR
+        if not is_question and any(
+            kw in msg for kw in ["remind me", "appointment", "add task", "add:", "to-do", "todo"]
+        ):
             return AgentName.CARE_COORDINATOR
 
-        # LLM-based classification for the harder cases
+        # 3. LLM classification, with the last few turns so short replies have context.
+        recent = ctx.history[-HISTORY_TURNS_FOR_ROUTING:]
         result = await self.llm.complete_json(
             system=INTENT_SYSTEM,
-            messages=[{"role": "user", "content": ctx.user_message}],
+            messages=[*recent, {"role": "user", "content": ctx.user_message}],
             schema_hint='{"agent": str, "confidence": float, "reason": str}',
         )
         agent_str = result.get("agent", "emotional_support")

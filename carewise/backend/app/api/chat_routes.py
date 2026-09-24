@@ -62,6 +62,9 @@ async def chat(
     )
     history_msgs = list(reversed(list(history_result.scalars())))[:-1]  # exclude the just-added one
     history = [{"role": m.role, "content": m.content} for m in history_msgs]
+    # Which agent replied last, so a short answer to its question ("yes", "6 hours, stress 7")
+    # goes back to it instead of being classified on its own.
+    last_agent = next((m.agent_used for m in reversed(history_msgs) if m.role == "assistant"), None)
 
     # Pull latest burnout score for emotional support context
     bc_result = await db.execute(
@@ -86,6 +89,7 @@ async def chat(
         metadata={
             "recent_burnout_score": latest_bc.burnout_score if latest_bc else None,
             "timezone": payload.timezone,
+            "last_agent": last_agent,
         },
     )
 

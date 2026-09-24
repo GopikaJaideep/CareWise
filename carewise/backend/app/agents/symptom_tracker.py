@@ -5,8 +5,10 @@ about a 6 out of 10") and maintains the symptom/medication ledger.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import re
+from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.base import AgentName, AgentResponse, BaseAgent, SessionContext
@@ -35,6 +37,32 @@ Your role:
 """
 
 
+NOTHING_SAVED_NOTE = (
+    "\n\nNothing was logged for this message. Do NOT say that anything was logged or saved. "
+    "If the caregiver described a symptom without a clear 1-10 severity, ask how bad it is on a "
+    "scale of 1 to 10 so it can be logged."
+)
+
+
+def parse_severity(value) -> int | None:
+    """Model output -> 1-10, or None if it isn't a usable number.
+
+    Handles "6", 6, 6.5 and "6/10". Rejects out-of-range values (0, 15) rather than
+    saving a severity the app's 1-10 scale can't represent.
+    """
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        number = float(value)
+    else:
+        match = re.match(r"\s*(\d+(?:\.\d+)?)", str(value))
+        if not match:
+            return None
+        number = float(match.group(1))
+    severity = round(number)
+    return severity if 1 <= severity <= 10 else None
+
+
 class SymptomTrackerAgent(BaseAgent):
     name = AgentName.SYMPTOM_TRACKER
     description = "Logs symptoms, medications, and surfaces patterns over time."
@@ -55,17 +83,19 @@ class SymptomTrackerAgent(BaseAgent):
         logged_summary = []
         # Step 2: Persist symptoms
         for s in extraction.get("symptoms", []) or []:
-            if not s.get("symptom") or s.get("severity") is None:
+            severity = parse_severity(s.get("severity"))
+            if not s.get("symptom") or severity is None:
                 continue
+            name = str(s["symptom"]).strip()[:120]
             log = SymptomLog(
                 user_id=ctx.user_id,
-                symptom=s["symptom"],
-                severity=int(s["severity"]),
+                symptom=name,
+                severity=severity,
                 notes=s.get("notes"),
                 logged_at=datetime.now(timezone.utc),
             )
             self.db.add(log)
-            logged_summary.append(f"{s['symptom']} ({s['severity']}/10)")
+            logged_summary.append(f"{name} ({severity}/10)")
 
         # Step 3: Persist medications
         for m in extraction.get("medications", []) or []:
@@ -73,7 +103,7 @@ class SymptomTrackerAgent(BaseAgent):
             if action == "added" and m.get("name"):
                 med = Medication(
                     user_id=ctx.user_id,
-                    name=m["name"],
+                    name=str(m["name"])[:120],
                     dosage=m.get("dosage") or "as prescribed",
                     schedule=m.get("schedule") or "as needed",
                     notes=m.get("notes"),
@@ -84,13 +114,18 @@ class SymptomTrackerAgent(BaseAgent):
         await self.db.commit()
 
         # Step 4: Compose human response
+        query = extraction.get("query")
         if logged_summary:
             confirmation = f"Logged: {', '.join(logged_summary)}."
             response_text = await self._compose_response(ctx, confirmation)
+        elif query in ("list_symptoms", "list_medications", "trend"):
+            # Answer from the saved records. Before, the model answered without them and could
+            # invent a history.
+            response_text = await self._answer_from_records(ctx, query)
         else:
             response_text = await self.llm.complete(
-                system=RESPONSE_SYSTEM,
-                messages=[{"role": "user", "content": ctx.user_message}],
+                system=RESPONSE_SYSTEM + NOTHING_SAVED_NOTE,
+                messages=[*ctx.history[-4:], {"role": "user", "content": ctx.user_message}],
                 temperature=0.3,
             )
 
@@ -98,6 +133,43 @@ class SymptomTrackerAgent(BaseAgent):
             agent=self.name,
             content=response_text,
             metadata={"extracted": extraction, "logged": logged_summary},
+        )
+
+    async def _answer_from_records(self, ctx: SessionContext, query: str) -> str:
+        since = datetime.now(timezone.utc) - timedelta(days=14)
+        symptoms = list((await self.db.execute(
+            select(SymptomLog)
+            .where(SymptomLog.user_id == ctx.user_id, SymptomLog.logged_at >= since)
+            .order_by(SymptomLog.logged_at.desc())
+            .limit(30)
+        )).scalars())
+        meds = list((await self.db.execute(
+            select(Medication).where(Medication.user_id == ctx.user_id, Medication.active.is_(True))
+        )).scalars())
+
+        if query == "list_medications":
+            if not meds:
+                return "There are no medications tracked yet. You can add one on the Symptoms page, or tell me here."
+            return "Medications you're tracking:\n" + "\n".join(
+                f"  • {m.name} ({m.dosage}, {m.schedule})" for m in meds
+            )
+
+        if not symptoms:
+            return "Nothing has been logged in the last 14 days. Tell me what you've noticed and how bad it is (1-10), and I'll log it."
+        records = "\n".join(
+            f"- {s.logged_at:%a %d %b}: {s.symptom} {s.severity}/10" + (f" ({s.notes})" if s.notes else "")
+            for s in symptoms
+        )
+        prompt = (
+            f"The caregiver asked: \"{ctx.user_message}\"\n\n"
+            f"These are ALL the symptoms logged in the last 14 days, newest first:\n{records}\n\n"
+            "Answer using only these records. Summarise briefly; if a symptom is logged 3+ times and "
+            "getting worse, mention the pattern gently and suggest raising it with the care team."
+        )
+        return await self.llm.complete(
+            system=RESPONSE_SYSTEM,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
         )
 
     async def _compose_response(self, ctx: SessionContext, confirmation: str) -> str:

@@ -55,6 +55,26 @@ MEDICAL_BOUNDARY_PATTERNS = [
 ]
 
 
+# Always checked, whatever CRISIS_KEYWORDS is set to: that setting can only ADD phrases, so a
+# misconfigured deployment can never switch off detection of the most common crisis language.
+# Deliberately broad; a false positive shows crisis numbers, a false negative can cost a life.
+CORE_CRISIS_PHRASES = [
+    "suicid",  # suicide, suicidal
+    "kill myself", "killing myself",
+    "end my life", "end it all", "take my own life",
+    "want to die", "wanna die", "wish i was dead", "wish i were dead", "better off dead",
+    "better off without me", "no reason to live", "dont want to live", "dont want to be alive",
+    "dont want to be here anymore", "dont want to wake up",
+    "hurt myself", "harm myself", "self-harm", "self harm",
+    "overdose", "take all my pills",
+]
+
+
+def _normalise(text: str) -> str:
+    """Lowercase and drop apostrophes (straight or curly) so "don't", "don’t" and "dont" match."""
+    return re.sub(r"['‘’]", "", text.lower())
+
+
 def detect_crisis(text: str) -> SafetyCheck:
     """Detect crisis-level content requiring immediate intervention.
 
@@ -62,8 +82,9 @@ def detect_crisis(text: str) -> SafetyCheck:
     must include crisis resources and decline to engage as a substitute
     for emergency support.
     """
-    lower = text.lower()
-    triggers = [kw for kw in settings.crisis_keywords_list if kw in lower]
+    lower = _normalise(text)
+    phrases = dict.fromkeys(CORE_CRISIS_PHRASES + [_normalise(k) for k in settings.crisis_keywords_list])
+    triggers = [kw for kw in phrases if kw in lower]
 
     if triggers:
         return SafetyCheck(
@@ -74,7 +95,8 @@ def detect_crisis(text: str) -> SafetyCheck:
         )
 
     # Secondary signals — emotional distress without explicit crisis terms
-    distress_signals = ["can't go on", "give up", "no point", "everything is hopeless"]
+    # (Apostrophes are already stripped from `lower`, hence "cant".)
+    distress_signals = ["cant go on", "give up", "no point", "everything is hopeless"]
     secondary = [s for s in distress_signals if s in lower]
     if secondary:
         return SafetyCheck(
