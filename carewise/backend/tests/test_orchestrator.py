@@ -36,6 +36,7 @@ class TestOrchestratorCycleDetection:
         from app.agents.orchestrator import MAX_HOPS, Orchestrator
 
         orch = Orchestrator.__new__(Orchestrator)
+        orch.llm = type("NoModel", (), {"provider": None})()  # risk screen skips without a model
         orch.agents = {
             AgentName.EMOTIONAL_SUPPORT: FakeAgent(
                 AgentName.EMOTIONAL_SUPPORT, content="", handoff=AgentName.SAFETY,
@@ -57,6 +58,7 @@ class TestOrchestratorCycleDetection:
         from app.agents.orchestrator import Orchestrator
 
         orch = Orchestrator.__new__(Orchestrator)
+        orch.llm = type("NoModel", (), {"provider": None})()  # risk screen skips without a model
         orch.agents = {
             AgentName.EMOTIONAL_SUPPORT: FakeAgent(
                 AgentName.EMOTIONAL_SUPPORT, handoff=AgentName.RESOURCE_GUIDE,
@@ -82,6 +84,7 @@ class TestOrchestratorCycleDetection:
         from app.agents.orchestrator import Orchestrator
 
         orch = Orchestrator.__new__(Orchestrator)
+        orch.llm = type("NoModel", (), {"provider": None})()  # risk screen skips without a model
         orch.agents = {
             AgentName.SAFETY: FakeAgent(AgentName.SAFETY, content="crisis"),
             AgentName.EMOTIONAL_SUPPORT: FakeAgent(AgentName.EMOTIONAL_SUPPORT, content="should not run"),

@@ -9,6 +9,7 @@ Architecture:
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from typing import Iterable
@@ -22,6 +23,7 @@ from app.agents.emotional_support import EmotionalSupportAgent
 from app.agents.resource_guide import ResourceGuideAgent
 from app.agents.safety import SafetyAgent
 from app.agents.symptom_tracker import SymptomTrackerAgent
+from app.core.risk import RiskAssessment, assess_risk
 from app.core.safety import detect_crisis
 from app.core.tracing import current_trace, step
 from app.services.llm import get_llm_client
@@ -57,6 +59,13 @@ _QUESTION = re.compile(
 _AFFIRMATIVE = {"yes", "yeah", "yep", "sure", "ok", "okay", "please", "yes please", "go on", "lets do it"}
 HISTORY_TURNS_FOR_ROUTING = 4
 
+# Added (fixed text, not model-written) when the risk screen flags serious distress without
+# a crisis and the reply came from an agent other than emotional support.
+CONCERN_NOTE = (
+    "It sounds like a lot right now. If you'd like to talk it through, I'm here. "
+    "And Lifeline is available any time on 13 11 14."
+)
+
 
 class Orchestrator:
     def __init__(self, db: AsyncSession) -> None:
@@ -86,9 +95,25 @@ class Orchestrator:
             self._trace_agent(response)
             return ctx.agent_outputs
 
-        # 2. Intent classification
+        # 2. Intent classification, with the AI risk screen running at the same time so it adds
+        #    no wait. The screen can only add protection: the keyword check above always wins.
+        screen = asyncio.create_task(self._screen_risk(ctx))
         with step("router"):
             primary = await self._classify_intent(ctx)
+        risk = await screen
+        self._trace_risk(risk)
+
+        if risk.level == "crisis":
+            logger.warning("AI risk screen flagged crisis for user_id=%s (who=%s)", ctx.user_id, risk.who)
+            ctx.metadata["risk"] = {"who": risk.who}
+            self._trace_route(AgentName.SAFETY, "safety-ai-screen")
+            response = await self.agents[AgentName.SAFETY].handle(ctx)
+            ctx.append_output(response)
+            self._trace_agent(response)
+            return ctx.agent_outputs
+        if risk.level == "concern":
+            ctx.metadata["risk_concern"] = True
+
         self._trace_route(primary, ctx.metadata.get("route_method"))
         logger.info("Routing user_id=%s to agent=%s", ctx.user_id, primary.value)
 
@@ -110,7 +135,23 @@ class Orchestrator:
             current = response.handoff_to
             hops += 1
 
+        # Serious distress, but the reply came from a task agent: add a gentle, fixed check-in.
+        # (Emotional support handles it itself; see its prompt.)
+        concern = ctx.metadata.get("risk_concern")
+        if concern and ctx.agent_outputs and not ctx.has_visited(AgentName.EMOTIONAL_SUPPORT):
+            last = ctx.agent_outputs[-1]
+            last.content = f"{last.content.rstrip()}\n\n{CONCERN_NOTE}"
         return ctx.agent_outputs
+
+    async def _screen_risk(self, ctx: SessionContext) -> RiskAssessment:
+        with step("risk_screen"):
+            return await assess_risk(self.llm, ctx.user_message, ctx.history)
+
+    @staticmethod
+    def _trace_risk(risk: RiskAssessment) -> None:
+        trace = current_trace()
+        if trace is not None:
+            trace.extra["risk_screen"] = {"level": risk.level, "who": risk.who}
 
     @staticmethod
     def _trace_route(agent: AgentName, method: str | None) -> None:
