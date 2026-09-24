@@ -154,6 +154,10 @@ To add an article, drop a Markdown file in `backend/app/knowledge/` (header line
 
 Every chat turn is traced (`backend/app/core/tracing.py`): how it was routed (keyword shortcut, follow-up, AI router, demo fallback or safety check), which agents ran, each AI call's latency and tokens (input, output, thinking), the resource guide's search mode and sections, and total time. The trace is stored with the reply and shown under it in the chat as "How this reply was made". Each turn also writes one structured `chat_turn` line to the server log, with no message text and no article names, so logs hold no health details. Set `LLM_PRICE_INPUT_PER_MTOK` and `LLM_PRICE_OUTPUT_PER_MTOK` (USD per million tokens) to add cost estimates; none are assumed.
 
+### Memory between chats (opt-in)
+
+CareWise can remember durable facts between chats, such as a treatment schedule, the care team, or what helps the caregiver unwind, so they don't have to repeat themselves. It is **off until the person turns it on** on their Home page, where every remembered fact is listed and can be deleted; turning it off forgets everything. A background task updates memory every few messages after the reply is sent, so it never adds latency. It never stores contact details, ID numbers or anything about suicide, self-harm or a crisis: that is enforced in code (`backend/app/services/memory.py`), not only in the prompt, and turns that reached the safety response are skipped.
+
 ### Changing the database schema
 
 Migrations (Alembic) run automatically when the backend starts, so deploys need no manual step. After changing a model in `app/models/db.py`, generate and commit a migration from `backend/`:

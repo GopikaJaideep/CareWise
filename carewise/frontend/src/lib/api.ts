@@ -173,6 +173,19 @@ export interface BurnoutCheckin {
   created_at: string;
 }
 
+export interface MemoryItem {
+  id: number;
+  text: string;
+  category: string;
+  created_at: string;
+}
+
+/** What CareWise remembers between chats (opt-in, see backend app/services/memory.py). */
+export interface MemoryState {
+  enabled: boolean;
+  items: MemoryItem[];
+}
+
 export interface DashboardSummary {
   open_tasks_count: number;
   today_tasks_count: number;
@@ -338,6 +351,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify(data),
     }),
+
+  memory: () => request<MemoryState>("/memory"),
+
+  setMemoryEnabled: (enabled: boolean) =>
+    request<MemoryState>("/memory/enabled", { method: "PUT", body: JSON.stringify({ enabled }) }),
+
+  forgetMemory: (id: number) => request<void>(`/memory/${id}`, { method: "DELETE" }),
+
+  forgetAllMemory: () => request<void>("/memory", { method: "DELETE" }),
 
   dashboard: () =>
     request<DashboardSummary>(`/dashboard?tz=${encodeURIComponent(browserTimezone())}`),
