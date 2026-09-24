@@ -150,6 +150,10 @@ Similarity is computed in Python: across ~50 sections that takes well under a mi
 
 To add an article, drop a Markdown file in `backend/app/knowledge/` (header lines `title:`, `source:`, `url:`, `region:`, then `## ` sections) and add a few questions for it to `evals/datasets/retrieval.jsonl`.
 
+### Seeing how a reply was made
+
+Every chat turn is traced (`backend/app/core/tracing.py`): how it was routed (keyword shortcut, follow-up, AI router, demo fallback or safety check), which agents ran, each AI call's latency and tokens (input, output, thinking), the resource guide's search mode and sections, and total time. The trace is stored with the reply and shown under it in the chat as "How this reply was made". Each turn also writes one structured `chat_turn` line to the server log, with no message text and no article names, so logs hold no health details. Set `LLM_PRICE_INPUT_PER_MTOK` and `LLM_PRICE_OUTPUT_PER_MTOK` (USD per million tokens) to add cost estimates; none are assumed.
+
 ### Changing the database schema
 
 Migrations (Alembic) run automatically when the backend starts, so deploys need no manual step. After changing a model in `app/models/db.py`, generate and commit a migration from `backend/`:

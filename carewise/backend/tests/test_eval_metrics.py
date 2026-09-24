@@ -116,3 +116,20 @@ async def test_runner_end_to_end_with_a_fake_model(monkeypatch, capsys):
     for heading in ("## Crisis detection", "## Routing", "## Symptom & medication extraction", "## Task extraction"):
         assert heading in out
     assert "Skipped" not in out
+
+
+class _OutageModel(_FakeModel):
+    """Every call fails the way the real client does: recorded as not ok, friendly text back."""
+
+    async def complete_json(self, system, messages, schema_hint, max_tokens=None):
+        from app.core.tracing import record_call
+        record_call(provider="fake", model="fake-model", latency_ms=1, ok=False)
+        return {}
+
+
+async def test_an_api_outage_aborts_the_run_instead_of_scoring_it(monkeypatch, capsys):
+    from evals import run
+
+    monkeypatch.setattr(run, "get_llm_client", lambda: _OutageModel())
+    assert await run.main(["--no-write", "--suite", "routing", "--limit", "5"]) == 2
+    assert "Aborted: 5 of 5 routing cases failed at the API" in capsys.readouterr().err

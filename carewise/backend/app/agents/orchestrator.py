@@ -23,6 +23,7 @@ from app.agents.resource_guide import ResourceGuideAgent
 from app.agents.safety import SafetyAgent
 from app.agents.symptom_tracker import SymptomTrackerAgent
 from app.core.safety import detect_crisis
+from app.core.tracing import current_trace, step
 from app.services.llm import get_llm_client
 
 logger = logging.getLogger(__name__)
@@ -79,12 +80,16 @@ class Orchestrator:
                 "Crisis content detected for user_id=%s, triggers=%s",
                 ctx.user_id, crisis.triggers,
             )
+            self._trace_route(AgentName.SAFETY, "safety")
             response = await self.agents[AgentName.SAFETY].handle(ctx)
             ctx.append_output(response)
+            self._trace_agent(response)
             return ctx.agent_outputs
 
         # 2. Intent classification
-        primary = await self._classify_intent(ctx)
+        with step("router"):
+            primary = await self._classify_intent(ctx)
+        self._trace_route(primary, ctx.metadata.get("route_method"))
         logger.info("Routing user_id=%s to agent=%s", ctx.user_id, primary.value)
 
         # 3. Invocation loop with cycle protection
@@ -96,8 +101,10 @@ class Orchestrator:
                 break
 
             agent = self.agents[current]
-            response = await agent.handle(ctx)
+            with step(current.value):
+                response = await agent.handle(ctx)
             ctx.append_output(response)
+            self._trace_agent(response)
 
             # If the agent yielded an empty response and a handoff, follow the handoff
             current = response.handoff_to
@@ -105,8 +112,31 @@ class Orchestrator:
 
         return ctx.agent_outputs
 
+    @staticmethod
+    def _trace_route(agent: AgentName, method: str | None) -> None:
+        trace = current_trace()
+        if trace is not None:
+            trace.route, trace.route_method = agent.value, method
+
+    @staticmethod
+    def _trace_agent(response: AgentResponse) -> None:
+        trace = current_trace()
+        if trace is None:
+            return
+        trace.agents.append(response.agent.value)
+        if "retrieval_mode" in response.metadata:  # resource guide: how it searched, what it found
+            trace.extra["retrieval"] = {
+                "mode": response.metadata["retrieval_mode"],
+                "sections": [r["id"] for r in response.metadata.get("retrieved", [])],
+            }
+
     async def _classify_intent(self, ctx: SessionContext) -> AgentName:
+        """Pick the first agent. Records how it decided in ctx.metadata["route_method"]."""
         msg = ctx.user_message.lower().strip()
+
+        def method(name: str) -> None:
+            ctx.metadata["route_method"] = name
+
 
         # 1. Answering a check-in the burnout monitor just asked for: numbers, or "yes" to its offer.
         #    Without this the reply ("6 hours, stress 7...") was classified alone and often went to
@@ -114,20 +144,24 @@ class Orchestrator:
         if ctx.metadata.get("last_agent") == AgentName.BURNOUT_MONITOR.value and (
             len(re.findall(r"\d+", msg)) >= 2 or msg.rstrip(".!") in _AFFIRMATIVE
         ):
+            method("follow-up")
             return AgentName.BURNOUT_MONITOR
 
         # 2. Cheap deterministic shortcuts, for requests only (see _QUESTION).
         is_question = bool(_QUESTION.match(msg))
         if any(kw in msg for kw in ["check in", "check-in", "checkin", "how am i doing"]):
+            method("shortcut")
             return AgentName.BURNOUT_MONITOR
         if not is_question and any(
             kw in msg for kw in ["remind me", "appointment", "add task", "add:", "to-do", "todo"]
         ):
+            method("shortcut")
             return AgentName.CARE_COORDINATOR
 
         # 3. No model (demo mode): questions go to the resource guide, which answers from the
         #    knowledge base without a model and says so when it has nothing relevant.
         if self.llm.provider is None:
+            method("demo-fallback")
             return AgentName.RESOURCE_GUIDE if is_question else AgentName.EMOTIONAL_SUPPORT
 
         # 4. LLM classification, with the last few turns so short replies have context.
@@ -137,6 +171,7 @@ class Orchestrator:
             messages=[*recent, {"role": "user", "content": ctx.user_message}],
             schema_hint='{"agent": str, "confidence": float, "reason": str}',
         )
+        method("model")
         agent_str = result.get("agent", "emotional_support")
         try:
             return AgentName(agent_str)
