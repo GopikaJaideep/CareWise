@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { AuthProvider, useAuth } from "./lib/auth";
@@ -5,11 +6,12 @@ import { LandingPage } from "./pages/LandingPage";
 import { AuthPage } from "./pages/AuthPage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
-import { DashboardPage } from "./pages/DashboardPage";
-import { ChatPage } from "./pages/ChatPage";
-import { TasksPage } from "./pages/TasksPage";
-import { SymptomsPage } from "./pages/SymptomsPage";
-import { ResourcesPage } from "./pages/ResourcesPage";
+// Signed-in pages (and the charting library they use) load on demand, so the landing page stays light.
+const DashboardPage = lazy(() => import("./pages/DashboardPage").then((m) => ({ default: m.DashboardPage })));
+const ChatPage = lazy(() => import("./pages/ChatPage").then((m) => ({ default: m.ChatPage })));
+const TasksPage = lazy(() => import("./pages/TasksPage").then((m) => ({ default: m.TasksPage })));
+const SymptomsPage = lazy(() => import("./pages/SymptomsPage").then((m) => ({ default: m.SymptomsPage })));
+const ResourcesPage = lazy(() => import("./pages/ResourcesPage").then((m) => ({ default: m.ResourcesPage })));
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { AppShell } from "./components/AppShell";
 
@@ -34,7 +36,20 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
       />
     );
   }
-  return <AppShell>{children}</AppShell>;
+  return (
+    <AppShell>
+      <Suspense
+        fallback={
+          <div role="status" className="flex h-full items-center justify-center">
+            <Loader2 className="h-6 w-6 animate-spin text-ink-500" aria-hidden="true" />
+            <span className="sr-only">Loading…</span>
+          </div>
+        }
+      >
+        {children}
+      </Suspense>
+    </AppShell>
+  );
 }
 
 function PublicOnlyRoute({ children }: { children: React.ReactNode }) {

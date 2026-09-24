@@ -345,19 +345,23 @@ function StatCard({
   return (
     <Link
       to={href}
-      className="card group p-4 transition-all duration-300 hover:-translate-y-1 hover:border-sage-300 hover:shadow-lift sm:p-6"
+      // A compact row on phones, a tall card from `sm` up.
+      className="card group flex items-center gap-4 p-4 transition-all duration-300 hover:-translate-y-1 hover:border-sage-300 hover:shadow-lift sm:block sm:p-6"
     >
-      <div className="flex items-start justify-between">
+      <div className="flex shrink-0 items-start justify-between">
         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-sage-50 text-sage-600 transition-all duration-300 group-hover:scale-110 group-hover:bg-sage-100">
           <Icon className="h-4 w-4" aria-hidden="true" />
         </div>
-        <ArrowRight className="h-4 w-4 -translate-x-1 text-ink-500 opacity-0 transition-all duration-300 group-hover:translate-x-0 group-hover:opacity-100" aria-hidden="true" />
+        <ArrowRight className="hidden h-4 w-4 -translate-x-1 text-ink-500 opacity-0 transition-all duration-300 group-hover:translate-x-0 group-hover:opacity-100 sm:block" aria-hidden="true" />
       </div>
-      <div className="mt-3 font-serif text-3xl font-semibold tabular-nums text-ink-900">
-        {typeof value === "number" ? <AnimatedNumber value={value} /> : value}
+      <div className="min-w-0 flex-1 sm:mt-3">
+        <div className="font-serif text-2xl font-semibold tabular-nums text-ink-900 sm:text-3xl">
+          {typeof value === "number" ? <AnimatedNumber value={value} /> : value}
+        </div>
+        <div className="mt-0.5 text-sm text-ink-700">{label}</div>
+        <div className="mt-1 text-xs text-ink-500">{sublabel}</div>
       </div>
-      <div className="mt-0.5 text-sm text-ink-700">{label}</div>
-      <div className="mt-1 text-xs text-ink-500">{sublabel}</div>
+      <ArrowRight className="h-4 w-4 shrink-0 text-ink-500 sm:hidden" aria-hidden="true" />
     </Link>
   );
 }

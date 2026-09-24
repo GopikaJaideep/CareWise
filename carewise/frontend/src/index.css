@@ -14,6 +14,12 @@
   h1, h2, h3 {
     @apply font-serif tracking-tight;
   }
+  /* A visible focus ring for keyboard users on every link and control that doesn't set its own. */
+  :focus-visible {
+    outline: 2px solid theme("colors.sage.500");
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
 }
 
 @layer components {
@@ -21,7 +27,7 @@
     @apply inline-flex items-center justify-center gap-2 rounded-lg bg-sage-600 px-4 py-2.5 text-sm font-medium text-white shadow-soft transition-all duration-200 ease-out hover:-translate-y-0.5 hover:bg-sage-700 hover:shadow-lift active:translate-y-0 active:scale-[0.97] active:duration-75 disabled:pointer-events-none disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-400 focus-visible:ring-offset-2 focus-visible:ring-offset-sand-50;
   }
   .btn-ghost {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-ink-700 transition-all duration-200 ease-out hover:bg-sand-100 hover:text-ink-900 active:scale-[0.97] active:duration-75;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-ink-700 transition-all duration-200 ease-out hover:bg-sand-100 hover:text-ink-900 active:scale-[0.97] active:duration-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sage-400 focus-visible:ring-offset-2 focus-visible:ring-offset-sand-50;
   }
   .btn-clay {
     @apply inline-flex items-center justify-center gap-2 rounded-lg bg-clay-400 px-4 py-2.5 text-sm font-medium text-white shadow-soft transition-all duration-200 ease-out hover:-translate-y-0.5 hover:bg-clay-500 hover:shadow-lift active:translate-y-0 active:scale-[0.97] active:duration-75;
