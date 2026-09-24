@@ -41,3 +41,8 @@ carewise.db
 # Build artefacts
 build/
 frontend/dist/
+
+# Local dev runtime
+*.pid
+.vite/
+.claude/
