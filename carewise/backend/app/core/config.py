@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     llm_model: str = "claude-sonnet-4-5-20250929"
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.6-flash"
+    # Used for semantic search over the knowledge base when GEMINI_API_KEY is set.
+    embedding_model: str = "gemini-embedding-001"
     llm_max_tokens: int = 1024
     llm_temperature: float = 0.7
 

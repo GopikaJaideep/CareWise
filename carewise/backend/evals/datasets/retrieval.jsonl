@@ -1,0 +1,40 @@
+{"id": "rt-01", "query": "What helps with cancer-related fatigue?", "relevant": ["fatigue"]}
+{"id": "rt-02", "query": "She's exhausted all the time even after sleeping, is that normal with chemo?", "relevant": ["fatigue"], "tags": ["paraphrase"]}
+{"id": "rt-03", "query": "How can we manage nausea during chemo?", "relevant": ["nausea"]}
+{"id": "rt-04", "query": "He keeps throwing up after treatment, what can we do?", "relevant": ["nausea"], "tags": ["paraphrase"]}
+{"id": "rt-05", "query": "What can I do when she won't eat?", "relevant": ["appetite"]}
+{"id": "rt-06", "query": "Food tastes metallic to him and he's losing weight", "relevant": ["appetite"], "tags": ["paraphrase"]}
+{"id": "rt-07", "query": "Her mouth is full of painful ulcers", "relevant": ["mouth_sores"]}
+{"id": "rt-08", "query": "What mouthwash should she use for a sore mouth?", "relevant": ["mouth_sores"]}
+{"id": "rt-09", "query": "She has a temperature of 38.3 and she's on chemo, what do I do?", "relevant": ["fever_infection", "urgent_symptoms"], "tags": ["safety-critical"]}
+{"id": "rt-10", "query": "What is neutropenia?", "relevant": ["fever_infection"]}
+{"id": "rt-11", "query": "When should I call the hospital straight away?", "relevant": ["urgent_symptoms", "fever_infection"], "tags": ["safety-critical"]}
+{"id": "rt-12", "query": "Is it normal to lose hair two weeks after starting chemo?", "relevant": ["hair_loss"]}
+{"id": "rt-13", "query": "Does scalp cooling stop hair falling out?", "relevant": ["hair_loss"]}
+{"id": "rt-14", "query": "What is caregiver burnout and what helps?", "relevant": ["caregiver_burnout"]}
+{"id": "rt-15", "query": "I feel numb and resentful and I'm always sick, am I burning out?", "relevant": ["caregiver_burnout"], "tags": ["paraphrase"]}
+{"id": "rt-16", "query": "How do I get respite care so I can have a break?", "relevant": ["respite"]}
+{"id": "rt-17", "query": "Is there someone who can look after Dad for a few days so I can rest?", "relevant": ["respite"], "tags": ["paraphrase"]}
+{"id": "rt-18", "query": "How can I prepare for an oncology appointment?", "relevant": ["talking_with_team"]}
+{"id": "rt-19", "query": "What questions should I ask the oncologist?", "relevant": ["talking_with_team"]}
+{"id": "rt-20", "query": "What financial support is available for carers in Australia?", "relevant": ["financial_support"]}
+{"id": "rt-21", "query": "Can I get Carer Payment from Centrelink?", "relevant": ["financial_support"]}
+{"id": "rt-22", "query": "Can you explain what palliative care actually is?", "relevant": ["palliative_care"]}
+{"id": "rt-23", "query": "Does palliative care mean they've given up on treatment?", "relevant": ["palliative_care"], "tags": ["paraphrase"]}
+{"id": "rt-24", "query": "How do I talk to our kids about their grandmother's cancer?", "relevant": ["talking_to_children"]}
+{"id": "rt-25", "query": "What's the difference between radiotherapy and chemotherapy?", "relevant": ["treatment_types"]}
+{"id": "rt-26", "query": "What is immunotherapy?", "relevant": ["treatment_types"]}
+{"id": "rt-27", "query": "Mum hasn't had a bowel movement in four days since starting the pain medicine", "relevant": ["bowel_changes"]}
+{"id": "rt-28", "query": "He has diarrhoea on immunotherapy, is that serious?", "relevant": ["bowel_changes"]}
+{"id": "rt-29", "query": "I can't sleep because I'm worrying about her all night", "relevant": ["carer_sleep"]}
+{"id": "rt-30", "query": "Tips for a carer who is lying awake every night", "relevant": ["carer_sleep"], "tags": ["paraphrase"]}
+{"id": "oos-01", "query": "What's the weather in Sydney tomorrow?", "relevant": [], "tags": ["out-of-scope"]}
+{"id": "oos-02", "query": "Can you recommend a good pasta recipe?", "relevant": [], "tags": ["out-of-scope"]}
+{"id": "oos-03", "query": "How do I fix my car's flat tyre?", "relevant": [], "tags": ["out-of-scope"]}
+{"id": "oos-04", "query": "What is the prognosis for stage 4 pancreatic cancer?", "relevant": [], "tags": ["out-of-scope", "not-in-library"]}
+{"id": "oos-05", "query": "Which clinical trials is she eligible for?", "relevant": [], "tags": ["out-of-scope", "not-in-library"]}
+{"id": "oos-06", "query": "How do I renew my passport?", "relevant": [], "tags": ["out-of-scope"]}
+{"id": "oos-07", "query": "Who won the football last night?", "relevant": [], "tags": ["out-of-scope"]}
+{"id": "oos-08", "query": "What dose of morphine should she take?", "relevant": [], "tags": ["out-of-scope", "dosing"]}
+{"id": "oos-09", "query": "Is turmeric a cure for cancer?", "relevant": [], "tags": ["out-of-scope", "not-in-library"]}
+{"id": "oos-10", "query": "How do I set up a trust for my will?", "relevant": [], "tags": ["out-of-scope"]}

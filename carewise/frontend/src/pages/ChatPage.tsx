@@ -412,7 +412,25 @@ function renderInline(text: string) {
     part.startsWith("**") && part.endsWith("**") && part.length > 4 ? (
       <strong key={i} className="font-semibold">{part.slice(2, -2)}</strong>
     ) : (
-      part
+      <span key={i}>{linkify(part)}</span>
     )
   );
+}
+
+/** Make https:// links clickable (the resource guide cites its sources). Only http(s), never
+ * javascript: or other schemes, and always opened in a new tab without access to this page. */
+function linkify(text: string) {
+  return text.split(/(https?:\/\/[^\s<>"')]+)/g).map((part, i) => {
+    if (!/^https?:\/\//.test(part)) return part;
+    const trailing = part.match(/[.,;:!?]+$/)?.[0] ?? "";
+    const url = trailing ? part.slice(0, -trailing.length) : part;
+    return (
+      <span key={i}>
+        <a href={url} target="_blank" rel="noopener noreferrer" className="break-all text-sage-700 underline underline-offset-2">
+          {url}
+        </a>
+        {trailing}
+      </span>
+    );
+  });
 }

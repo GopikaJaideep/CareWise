@@ -133,6 +133,23 @@ DATABASE_URL=postgresql://user:password@host/dbname?sslmode=require
 
 Paste the URL exactly as your provider shows it; `postgres://` and `sslmode=` are converted for the async driver automatically. Tables are created on first start. Also set a fixed `SECRET_KEY`, or everyone is signed out whenever it changes. The startup log says which database is in use.
 
+### How the resource guide finds answers
+
+The resource guide answers only from a curated library of original plain-language articles in `backend/app/knowledge/`, each linked to its source (Cancer Council, Carer Gateway, Services Australia, ACS...). Every answer cites the sections it used, and the source list is added by code, not written by the model, so links can't be invented. If nothing relevant is found, it says so rather than guessing.
+
+Search is hybrid: BM25 keyword ranking always runs; with `GEMINI_API_KEY` set, Gemini embeddings add semantic search, merged by reciprocal-rank fusion, behind a relevance cutoff. Section vectors are cached in the database, so restarts don't re-embed. Measured with `python -m evals.run --suite retrieval` on 30 questions and 10 off-topic ones:
+
+| Search | Right article first | Right article in top 4 | Off-topic refused | Median search time |
+|---|---|---|---|---|
+| Keyword only | 76.7% | 86.7% | 90% | <1 ms |
+| Hybrid (+ Gemini embeddings) | 100% | 100% | 90% | ~1 s |
+
+Keyword search misses paraphrases ("he keeps throwing up", "she won't eat"); semantic search recovers all of them. The relevance cutoffs were tuned on this same small set, so treat the hybrid numbers as optimistic until more questions (and a held-out set) are added. Embeddings are built in the background at startup, never inside a user's request, and until they're ready search uses keywords.
+
+Similarity is computed in Python: across ~50 sections that takes well under a millisecond. At thousands of sections, the next step is pgvector (an indexed `vector` column and `ORDER BY embedding <=> :query`), which Neon, Supabase and Render Postgres all support.
+
+To add an article, drop a Markdown file in `backend/app/knowledge/` (header lines `title:`, `source:`, `url:`, `region:`, then `## ` sections) and add a few questions for it to `evals/datasets/retrieval.jsonl`.
+
 ### Changing the database schema
 
 Migrations (Alembic) run automatically when the backend starts, so deploys need no manual step. After changing a model in `app/models/db.py`, generate and commit a migration from `backend/`:

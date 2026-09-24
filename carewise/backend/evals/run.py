@@ -28,15 +28,16 @@ from app.agents.symptom_tracker import SymptomTrackerAgent
 from app.core.config import get_settings
 from app.core.safety import detect_crisis
 from app.services.llm import LLMClient, get_llm_client
+from app.services.retrieval import GeminiEmbedder, Retriever, load_corpus
 from evals.metrics import (
-    binary_report, classification_report, extraction_summary, percentile, score_medications,
-    score_symptoms, score_tasks,
+    binary_report, classification_report, extraction_summary, percentile, retrieval_report,
+    score_medications, score_symptoms, score_tasks,
 )
 
 HERE = Path(__file__).parent
 DATASETS = HERE / "datasets"
 RESULTS = HERE / "results"
-SUITES = ["crisis", "routing", "symptoms", "tasks"]
+SUITES = ["crisis", "retrieval", "routing", "symptoms", "tasks"]
 NEEDS_MODEL = {"routing", "symptoms", "tasks"}
 
 # Every task case is written relative to this moment, so "Tuesday at 10" has one right answer.
@@ -169,7 +170,37 @@ def _share(flags: list[bool]) -> float | None:
     return round(sum(flags) / len(flags), 3) if flags else None
 
 
-RUNNERS = {"crisis": run_crisis, "routing": run_routing, "symptoms": run_symptoms, "tasks": run_tasks}
+async def run_retrieval(cases: list[dict], _llm, delay: float) -> dict[str, Any]:
+    """Keyword-only always; hybrid (keyword + Gemini embeddings) too when GEMINI_API_KEY is set,
+    so the report shows what semantic search adds rather than assuming it."""
+    settings = get_settings()
+    chunks = load_corpus()
+    modes = {"keyword": Retriever(chunks)}
+    if settings.gemini_api_key:
+        modes["hybrid"] = Retriever(chunks, embedder=GeminiEmbedder(settings.gemini_api_key, settings.embedding_model))
+    reports, all_rows = {}, {}
+    for mode, retriever in modes.items():
+        await retriever.prepare()  # what the app's startup warm-up does
+        if mode != "keyword" and retriever.mode != "hybrid":
+            reports[mode] = {"error": "embeddings unavailable (see warnings above)"}
+            continue
+        timer = Timer()
+        rows = []
+        for case in cases:
+            hits = await timer.run(retriever.search(case["query"]))
+            docs = list(dict.fromkeys(h.chunk.doc_id for h in hits))
+            rows.append({**case, "retrieved": docs})
+            if mode != "keyword":
+                await asyncio.sleep(delay)
+        report = retrieval_report(rows, k=4)
+        report["latency"] = timer.summary()
+        report["misses"] = [r for r in rows if r["relevant"] and not set(r["retrieved"][:4]) & set(r["relevant"])]
+        report["not_refused"] = [r for r in rows if not r["relevant"] and r["retrieved"]]
+        reports[mode], all_rows[mode] = report, rows
+    return {"report": reports, "cases": all_rows}
+
+
+RUNNERS = {"crisis": run_crisis, "retrieval": run_retrieval, "routing": run_routing, "symptoms": run_symptoms, "tasks": run_tasks}
 
 
 def pct(x: float | None) -> str:
@@ -189,6 +220,20 @@ def render_markdown(meta: dict, results: dict[str, dict]) -> str:
             lines += ["Missed crises:", *[f"- `{m['id']}` {m['message']}" for m in r["misses"]], ""]
         if r["false_alarms"]:
             lines += ["False alarms:", *[f"- `{m['id']}` {m['message']} (matched: {', '.join(m['triggers'])})" for m in r["false_alarms"]], ""]
+    if "retrieval" in results:
+        lines += ["## Retrieval (resource guide)", "", "| Search | Hit@1 | Recall@4 | MRR | Real questions refused | Off-topic refused | p50 |",
+                  "|---|---|---|---|---|---|---|"]
+        for mode, r in results["retrieval"]["report"].items():
+            if "error" in r:
+                lines.append(f"| {mode} | {r['error']} | | | | | |")
+                continue
+            lines.append(f"| {mode} | {pct(r['hit_at_1'])} | {pct(r['recall_at_k'])} | {r['mrr']:.3f} | {pct(r['wrongly_refused'])} | {pct(r['correctly_refused'])} | {r['latency']['p50_s']}s |")
+        lines.append("")
+        for mode, r in results["retrieval"]["report"].items():
+            if r.get("misses"):
+                lines += [f"{mode}: right article not in top 4:", *[f"- `{m['id']}` {m['query']} → {', '.join(m['retrieved']) or 'nothing'}" for m in r["misses"]], ""]
+            if r.get("not_refused"):
+                lines += [f"{mode}: off-topic but answered:", *[f"- `{m['id']}` {m['query']} → {', '.join(m['retrieved'])}" for m in r["not_refused"]], ""]
     if "routing" in results:
         r = results["routing"]["report"]
         lines += ["## Routing", f"{r['n']} cases. Accuracy **{pct(r['accuracy'])}**, macro-F1 {r['macro_f1']:.3f}, latency p50 {r['latency']['p50_s']}s / p95 {r['latency']['p95_s']}s.", "",
@@ -227,6 +272,10 @@ async def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.WARNING)
+    # Windows consoles default to cp1252, which can't print the report's arrows and quotes.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     wanted = SUITES if args.suite == "all" else [s.strip() for s in args.suite.split(",")]
     unknown = set(wanted) - set(SUITES)
     if unknown:

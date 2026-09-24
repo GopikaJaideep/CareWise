@@ -13,6 +13,8 @@ from app.models.db import CareTask, SymptomLog
 class FakeLLM:
     """Scripted stand-in for the LLM client; records what each call was sent."""
 
+    provider = "fake"
+
     def __init__(self, json_reply=None, text_reply="ok"):
         self.json_reply = json_reply or {}
         self.text_reply = text_reply
@@ -184,3 +186,10 @@ async def test_symptom_question_with_no_records_says_so_without_the_model(db):
     response = await agent.handle(ctx("What have we logged?"))
     assert "Nothing has been logged" in response.content
     assert agent.llm.text_calls == []
+
+
+async def test_without_a_model_questions_reach_the_resource_guide():
+    orch = orchestrator({})
+    orch.llm.provider = None
+    assert await orch._classify_intent(ctx("How can we manage nausea during chemo?")) == AgentName.RESOURCE_GUIDE
+    assert await orch._classify_intent(ctx("I had such a hard day")) == AgentName.EMOTIONAL_SUPPORT
