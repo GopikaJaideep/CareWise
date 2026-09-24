@@ -133,6 +133,16 @@ DATABASE_URL=postgresql://user:password@host/dbname?sslmode=require
 
 Paste the URL exactly as your provider shows it; `postgres://` and `sslmode=` are converted for the async driver automatically. Tables are created on first start. Also set a fixed `SECRET_KEY`, or everyone is signed out whenever it changes. The startup log says which database is in use.
 
+### Changing the database schema
+
+Migrations (Alembic) run automatically when the backend starts, so deploys need no manual step. After changing a model in `app/models/db.py`, generate and commit a migration from `backend/`:
+
+```
+alembic revision --autogenerate -m "add notes to care tasks"
+```
+
+Review the generated file in `migrations/versions/`. `tests/test_migrations.py` fails if the models and migrations ever drift apart. Databases created before migrations were introduced are adopted automatically on first start.
+
 ---
 
 ## Repository layout

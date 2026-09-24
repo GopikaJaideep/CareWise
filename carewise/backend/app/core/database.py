@@ -8,7 +8,6 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import get_settings
-from app.models.db import Base
 
 logger = logging.getLogger(__name__)
 
@@ -72,8 +71,12 @@ async def init_db() -> None:
             "Koyeb, Fly without a volume...) every account and record is lost on redeploy. "
             "Set DATABASE_URL to a Postgres database for any hosted deployment."
         )
+    # Migrations, not metadata.create_all: create_all only adds missing tables and never changes
+    # existing ones, so schema changes would silently never reach a deployed database.
+    from app.core.migrations import upgrade_to_head  # imported here: migrations/env.py imports this module
+
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(upgrade_to_head)
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
