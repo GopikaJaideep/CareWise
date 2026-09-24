@@ -1,0 +1,18 @@
+{"id": "tk-01", "message": "Remind me she has chemo on Tuesday at 10.", "expected": [{"title": ["chemo"], "due": "2026-09-29T10:00", "category": ["appointment"]}]}
+{"id": "tk-02", "message": "Add: oncology appointment Tuesday at 10am.", "expected": [{"title": ["oncolog"], "due": "2026-09-29T10:00", "category": ["appointment"]}]}
+{"id": "tk-03", "message": "Pick up his prescription from the pharmacy tomorrow.", "expected": [{"title": ["prescription", "pharmacy"], "due_date": "2026-09-24", "category": ["errand", "medication"]}]}
+{"id": "tk-04", "message": "Blood test at the clinic Thursday 8:30.", "expected": [{"title": ["blood"], "due": "2026-09-24T08:30", "category": ["appointment"]}]}
+{"id": "tk-05", "message": "Don't let me forget to call the palliative care nurse on Monday.", "expected": [{"title": ["palliative", "nurse", "call"], "due_date": "2026-09-28", "category": ["general", "appointment"]}]}
+{"id": "tk-06", "message": "Put the scan on Friday at 2pm in the plan.", "expected": [{"title": ["scan"], "due": "2026-09-25T14:00", "category": ["appointment"]}]}
+{"id": "tk-07", "message": "Need to buy more nutrition shakes.", "expected": [{"title": ["shake", "nutrition"], "due": null, "category": ["errand"]}], "tags": ["no-date"]}
+{"id": "tk-08", "message": "Her appointment got moved to Thursday at 11.", "expected": [{"title": ["appointment"], "due": "2026-09-24T11:00", "category": ["appointment"]}]}
+{"id": "tk-09", "message": "Remind me to give her the evening tablets at 8pm tonight.", "expected": [{"title": ["tablet", "medication", "pill"], "due": "2026-09-23T20:00", "category": ["medication"]}]}
+{"id": "tk-10", "message": "todo: renew the disabled parking permit", "expected": [{"title": ["parking", "permit"], "due": null, "category": ["errand", "general"]}], "tags": ["no-date"]}
+{"id": "tk-11", "message": "Radiotherapy next Wednesday at 9:15.", "expected": [{"title": ["radio"], "due": "2026-09-30T09:15", "category": ["appointment"]}]}
+{"id": "tk-12", "message": "GP at 3pm today.", "expected": [{"title": ["gp", "doctor"], "due": "2026-09-23T15:00", "category": ["appointment"]}]}
+{"id": "tk-13", "message": "Chemo Tuesday at 10 and a blood test Monday at 9.", "expected": [{"title": ["chemo"], "due": "2026-09-29T10:00", "category": ["appointment"]}, {"title": ["blood"], "due": "2026-09-28T09:00", "category": ["appointment"]}], "tags": ["two-tasks"]}
+{"id": "tk-14", "message": "What's on the care plan for today?", "expected": [], "query": ["list_today", "list_tasks"], "tags": ["query"]}
+{"id": "tk-15", "message": "What have I got coming up this week?", "expected": [], "query": ["list_upcoming", "list_tasks"], "tags": ["query"]}
+{"id": "tk-16", "message": "I picked up the prescription, you can tick that off.", "expected": [], "mark_done": ["prescription"], "tags": ["mark-done"]}
+{"id": "tk-17", "message": "Book a taxi for Friday 7am to get to the hospital.", "expected": [{"title": ["taxi"], "due": "2026-09-25T07:00", "category": ["errand", "appointment", "general"]}]}
+{"id": "tk-18", "message": "Call the pharmacy about the repeat script by the end of the day.", "expected": [{"title": ["pharmacy", "script"], "due_date": "2026-09-23", "category": ["errand", "medication", "general"]}]}
