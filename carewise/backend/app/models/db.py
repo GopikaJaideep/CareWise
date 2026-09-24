@@ -160,3 +160,18 @@ class PasswordResetToken(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     user: Mapped["User"] = relationship(back_populates="reset_tokens")
+
+
+class KnowledgeEmbedding(Base):
+    """Cached embedding vector for one knowledge-base section.
+
+    Keyed by a hash of the section's text and the embedding model, so editing an article or
+    switching models re-embeds only what changed. Stored as JSON so it works on SQLite and
+    Postgres alike; see app/services/retrieval.py for why pgvector isn't needed at this size.
+    """
+    __tablename__ = "knowledge_embeddings"
+
+    content_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    model: Mapped[str] = mapped_column(String(100), primary_key=True)
+    vector: Mapped[list] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)

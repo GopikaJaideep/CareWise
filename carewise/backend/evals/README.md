@@ -6,6 +6,7 @@ Unit tests check that code paths work; these evals check whether the AI makes th
 | Suite | Cases | What it measures |
 |---|---|---|
 | `crisis` | 48 (24 crises, 24 hard negatives) | Crisis detection: recall (crises caught) and false-positive rate. Negatives include end-of-life planning ("she doesn't want to die in hospital"), idioms ("this week is killing me") and near-keyword phrases. |
+| `retrieval` | 40 (30 questions, 10 off-topic) | Resource-guide search: hit@1, recall@4, MRR, and whether off-topic questions are refused. Runs keyword-only always and hybrid too when `GEMINI_API_KEY` is set, side by side. |
 | `routing` | 80 | Which agent handles a message: accuracy, per-agent precision/recall, accuracy by tag (`tricky`, `follow-up`, `mixed`, `resources-page`, ...). |
 | `symptoms` | 23 | Symptom and medication extraction, including "pain is really bad" (no number), which must log nothing rather than a guessed severity. |
 | `tasks` | 18 | Task extraction: title, category, and due date/time in the caregiver's timezone, relative to a fixed "now" (Wed 23 Sep 2026, 9:00 Sydney) so "Tuesday at 10" has one right answer. |
@@ -41,6 +42,16 @@ It catches explicit phrases but misses inflections ("I've been thinking about en
 indirect language ("What's the point of living anymore?") and risk to the person being cared for
 ("Mum said she wants to kill herself"). It also flags end-of-life planning as a crisis. This is the
 number an AI-based risk check has to beat without raising the false-positive rate much.
+
+Retrieval, 24 September 2026 (gemini-embedding-001):
+
+| Search | Hit@1 | Recall@4 | MRR | Off-topic refused |
+|---|---|---|---|---|
+| keyword | 76.7% | 86.7% | 0.817 | 90% |
+| hybrid | 100% | 100% | 1.000 | 90% |
+
+The cosine cutoff was chosen on this same set (weakest real match 0.686, strongest off-topic 0.663),
+so the hybrid numbers are optimistic; add questions and a held-out set before trusting them further.
 
 Routing and extraction baselines need a model run; add them here once measured.
 

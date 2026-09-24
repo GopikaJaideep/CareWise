@@ -1,72 +1,61 @@
-"""Resource guide agent — surfaces vetted information without giving medical advice.
+"""Resource guide agent: answers general questions from the curated knowledge base only.
 
-Uses a curated knowledge base (in production this would be RAG over reputable
-sources like Cancer Council, NCCN, ACS). Always cites and always reminds the
-caregiver that this is general information, not advice for their specific case.
+Retrieval (app/services/retrieval.py) finds relevant sections of the articles in app/knowledge/.
+The model writes a plain-language answer from those sections and cites them as [1], [2]...; the
+"Sources" list is then added by code from what was actually retrieved, so it can't be invented.
+If nothing relevant is found, the reply says so instead of guessing.
 """
 from __future__ import annotations
 
+import re
+
 from app.agents.base import AgentName, AgentResponse, BaseAgent, SessionContext
 from app.services.llm import get_llm_client
+from app.services.retrieval import Hit, get_retriever
 
+SYSTEM_PROMPT = """You are the Resource Guide specialist within CareWise, an AI companion for cancer caregivers.
 
-# In production, this would be replaced with retrieval from a vector store
-# of vetted, region-appropriate sources. The current curated set demonstrates
-# the pattern and lets the demo work without a live RAG pipeline.
-KNOWLEDGE_BASE = {
-    "fatigue": {
-        "summary": "Cancer-related fatigue is one of the most common side effects of treatment. It is different from ordinary tiredness — rest may not relieve it. Pacing activity, gentle movement, hydration, and short structured rest periods can help.",
-        "sources": [
-            "Cancer Council Australia — Fatigue and cancer (cancer.org.au/cancer-information/managing-side-effects/fatigue)",
-            "American Cancer Society — Fatigue in people with cancer (cancer.org)",
-        ],
-    },
-    "nausea": {
-        "summary": "Nausea during treatment can often be managed with prescribed anti-emetic medications taken on schedule rather than only when symptoms appear. Small frequent meals, ginger, and avoiding strong food smells can help.",
-        "sources": [
-            "Cancer Council Australia — Nausea and vomiting",
-            "NCCN Guidelines for Patients — Antiemesis",
-        ],
-    },
-    "appetite": {
-        "summary": "Appetite loss is common during treatment. Small, calorie-dense meals throughout the day are usually more manageable than three large ones. A dietitian referral through the treatment team can help.",
-        "sources": ["Cancer Council Australia — Nutrition and cancer"],
-    },
-    "caregiver_burnout": {
-        "summary": "Caregiver burnout is a recognised condition characterised by physical, emotional, and mental exhaustion. It is not a personal failing. Respite care, peer support groups, and brief structured breaks are evidence-based interventions.",
-        "sources": [
-            "Carers Australia — Caring for the carer (carersaustralia.com.au)",
-            "Cancer Council — Caring for someone with cancer",
-        ],
-    },
-    "communication_with_team": {
-        "summary": "Keeping a single notebook (paper or digital) with symptoms, medications, questions, and appointment summaries makes consultations more productive. Bringing a second person to appointments helps with recall.",
-        "sources": ["Cancer Council Australia — Talking with your doctors"],
-    },
-    "financial_support_au": {
-        "summary": "In Australia, caregivers may be eligible for the Carer Payment, Carer Allowance, or Carer Supplement through Services Australia. Cancer Council also runs a free financial counselling service.",
-        "sources": [
-            "Services Australia — Carer payments",
-            "Cancer Council 13 11 20 — Pro bono financial counselling",
-        ],
-    },
-}
+Answer the caregiver's question using ONLY the numbered sources below. You are not a substitute for the medical team.
 
+Rules:
+1. Use only facts stated in the sources. If they don't answer the question, say so plainly and suggest the treatment team or Cancer Council on 13 11 20.
+2. Cite the source numbers you used in square brackets, e.g. "Small, frequent meals often help [2]." Do not write a sources list or URLs; they are added automatically.
+3. Never give specific doses, never diagnose, never predict outcomes. Where the sources describe urgent warning signs, keep that advice clear and prominent.
+4. Plain, warm language. 2-4 short paragraphs.
+5. End with: "This is general information. The treatment team knows your situation best."
 
-SYSTEM_PROMPT = """You are the Resource Guide specialist within CareWise.
-
-Your role: provide clear, general, evidence-based information from vetted sources to help caregivers understand what they're navigating. You are NOT a substitute for the medical team.
-
-Strict rules:
-1. Only use information from the provided knowledge base context. If the question isn't covered, say so plainly and suggest who to ask (oncology nurse, GP, Cancer Council 13 11 20).
-2. Always include sources at the end as a "Sources:" line.
-3. Always include this reminder when discussing symptoms or treatment: "This is general information — your treatment team knows your specific situation best."
-4. Never give specific dosages, never diagnose, never predict outcomes.
-5. Keep responses concise (3-5 short paragraphs maximum).
-
-Knowledge base context for this query:
-{kb_context}
+Sources:
+{sources}
 """
+
+NOT_FOUND = (
+    "I don't have trusted information on that in my library, so I'd rather not guess.\n\n"
+    "The treatment team is the best place to ask. Cancer Council's information and support line, "
+    "13 11 20, can also help, and for carer support Carer Gateway is on 1800 422 737."
+)
+
+DISCLAIMER = "This is general information. The treatment team knows your situation best."
+
+
+def format_sources(hits: list[Hit]) -> str:
+    return "\n\n".join(
+        f"[{n}] {h.chunk.title}: {h.chunk.heading}\n{h.chunk.text}" for n, h in enumerate(hits, start=1)
+    )
+
+
+def sources_footer(hits: list[Hit], answer: str | None = None) -> str:
+    """List the sources the answer cites (or all retrieved ones if it cites none), each with its link."""
+    cited = {int(n) for n in re.findall(r"\[(\d+)\]", answer or "")}
+    lines, seen = [], set()
+    for n, h in enumerate(hits, start=1):
+        if cited and n not in cited:
+            continue
+        key = (h.chunk.title, h.chunk.url)
+        if key in seen:
+            continue
+        seen.add(key)
+        lines.append(f"[{n}] {h.chunk.title} ({h.chunk.source}): {h.chunk.url}")
+    return "Sources:\n" + "\n".join(lines)
 
 
 class ResourceGuideAgent(BaseAgent):
@@ -75,45 +64,34 @@ class ResourceGuideAgent(BaseAgent):
 
     def __init__(self) -> None:
         self.llm = get_llm_client()
+        self.retriever = get_retriever()
         self.system_prompt = SYSTEM_PROMPT
 
     async def handle(self, ctx: SessionContext) -> AgentResponse:
-        relevant = self._retrieve(ctx.user_message)
+        hits = await self.retriever.search(ctx.user_message)
+        metadata = {
+            "retrieval_mode": self.retriever.mode,
+            "retrieved": [
+                {"id": h.chunk.id, "bm25": round(h.bm25, 2),
+                 "cosine": None if h.cosine is None else round(h.cosine, 3)}
+                for h in hits
+            ],
+        }
+        if not hits:
+            return AgentResponse(agent=self.name, content=NOT_FOUND, metadata=metadata)
 
-        if not relevant:
-            kb_context = "(No directly matching entries in the knowledge base.)"
+        if self.llm.provider is None:
+            # Demo mode: no model to summarise, so quote the best-matching section directly.
+            top = hits[0].chunk
+            answer = f"**{top.title}: {top.heading}**\n\n{top.text} [1]\n\n{DISCLAIMER}"
         else:
-            kb_context = "\n\n".join(
-                f"Topic: {topic}\nSummary: {data['summary']}\nSources: {'; '.join(data['sources'])}"
-                for topic, data in relevant.items()
+            answer = await self.llm.complete(
+                system=self.system_prompt.format(sources=format_sources(hits)),
+                messages=[{"role": "user", "content": ctx.user_message}],
+                temperature=0.3,
             )
-
-        system = self.system_prompt.format(kb_context=kb_context)
-        text = await self.llm.complete(
-            system=system,
-            messages=[{"role": "user", "content": ctx.user_message}],
-            temperature=0.3,
-        )
-
         return AgentResponse(
             agent=self.name,
-            content=text,
-            metadata={"retrieved_topics": list(relevant.keys())},
+            content=f"{answer.strip()}\n\n{sources_footer(hits, answer)}",
+            metadata=metadata,
         )
-
-    def _retrieve(self, query: str) -> dict[str, dict]:
-        """Simple keyword retrieval. In production: vector search over RAG corpus."""
-        q = query.lower()
-        keyword_map = {
-            "fatigue": ["tired", "exhaust", "fatigue", "no energy", "wiped out"],
-            "nausea": ["nausea", "nauseous", "vomit", "sick to", "throwing up"],
-            "appetite": ["appetite", "won't eat", "not eating", "no hunger", "can't eat"],
-            "caregiver_burnout": ["burnt out", "burnout", "overwhelm", "can't cope", "exhausted myself"],
-            "communication_with_team": ["doctor", "oncologist", "appointment prep", "what to ask", "consultation"],
-            "financial_support_au": ["financial", "money", "carer payment", "centrelink", "afford"],
-        }
-        matched = {}
-        for topic, keywords in keyword_map.items():
-            if any(kw in q for kw in keywords):
-                matched[topic] = KNOWLEDGE_BASE[topic]
-        return matched

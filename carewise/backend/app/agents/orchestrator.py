@@ -125,7 +125,12 @@ class Orchestrator:
         ):
             return AgentName.CARE_COORDINATOR
 
-        # 3. LLM classification, with the last few turns so short replies have context.
+        # 3. No model (demo mode): questions go to the resource guide, which answers from the
+        #    knowledge base without a model and says so when it has nothing relevant.
+        if self.llm.provider is None:
+            return AgentName.RESOURCE_GUIDE if is_question else AgentName.EMOTIONAL_SUPPORT
+
+        # 4. LLM classification, with the last few turns so short replies have context.
         recent = ctx.history[-HISTORY_TURNS_FOR_ROUTING:]
         result = await self.llm.complete_json(
             system=INTENT_SYSTEM,

@@ -1,6 +1,7 @@
 """Schema changes must reach deployed databases. Before Alembic, startup ran metadata.create_all,
 which never alters an existing table, so a new column would silently never exist in production."""
 import sqlalchemy as sa
+from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
@@ -40,7 +41,11 @@ async def test_fresh_database_is_built_by_migrations_and_matches_the_models(tmp_
 async def test_database_created_before_migrations_is_adopted_not_recreated(tmp_path):
     engine = await _engine(tmp_path)
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)  # how every existing database was made
+        # Recreate a pre-Alembic database as it really was: the baseline (0001) schema made by
+        # create_all, with no migration history. (Not today's models: later migrations add tables
+        # that old databases don't have.)
+        await conn.run_sync(lambda c: command.upgrade(alembic_config(c), BASELINE_REVISION))
+        await conn.execute(sa.text("DROP TABLE alembic_version"))
         await conn.execute(sa.text(
             "INSERT INTO users (email, hashed_password, display_name, created_at) "
             "VALUES ('a@example.com', 'x', 'A', CURRENT_TIMESTAMP)"

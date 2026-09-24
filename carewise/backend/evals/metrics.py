@@ -172,6 +172,35 @@ def extraction_summary(scores: list[dict]) -> dict[str, Any]:
     }
 
 
+# --- Retrieval ----------------------------------------------------------------------------------
+
+def retrieval_report(rows: list[dict], k: int) -> dict[str, Any]:
+    """rows: {"relevant": [doc ids], "retrieved": [doc ids in rank order]}.
+
+    In-scope questions: hit@1, recall@k (any relevant doc in the top k) and MRR, plus how often a
+    real question was wrongly refused (nothing retrieved). Out-of-scope questions should retrieve
+    nothing, so the agent says "I don't know" instead of answering from an unrelated article.
+    """
+    in_scope = [r for r in rows if r["relevant"]]
+    out_scope = [r for r in rows if not r["relevant"]]
+
+    def first_hit(r: dict) -> int | None:
+        return next((i for i, d in enumerate(r["retrieved"][:k], start=1) if d in r["relevant"]), None)
+
+    ranks = [first_hit(r) for r in in_scope]
+    n = len(in_scope) or 1
+    return {
+        "k": k,
+        "in_scope": len(in_scope),
+        "out_of_scope": len(out_scope),
+        "hit_at_1": sum(1 for x in ranks if x == 1) / n,
+        "recall_at_k": sum(1 for x in ranks if x) / n,
+        "mrr": sum(1 / x for x in ranks if x) / n,
+        "wrongly_refused": sum(1 for r in in_scope if not r["retrieved"]) / n,
+        "correctly_refused": (sum(1 for r in out_scope if not r["retrieved"]) / len(out_scope)) if out_scope else None,
+    }
+
+
 # --- Latency ------------------------------------------------------------------------------------
 
 def percentile(values: list[float], pct: float) -> float:

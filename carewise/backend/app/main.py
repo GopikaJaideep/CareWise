@@ -1,6 +1,7 @@
 """CareWise FastAPI application entry point."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -10,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import auth_routes, chat_routes, tracking_routes
 from app.core.config import get_settings
 from app.core.database import init_db
+from app.services.retrieval import get_retriever
 from app.services.scheduler import start_scheduler, stop_scheduler
 
 logging.basicConfig(
@@ -24,7 +26,11 @@ settings = get_settings()
 async def lifespan(app: FastAPI):
     await init_db()
     start_scheduler()
+    # Embed the knowledge base in the background (a no-op without GEMINI_API_KEY, and cached in
+    # the database after the first deploy), so the first resource question isn't slow.
+    warmup = asyncio.create_task(get_retriever().prepare())
     yield
+    warmup.cancel()
     stop_scheduler()
 
 
