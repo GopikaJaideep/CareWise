@@ -79,10 +79,20 @@ SPAN_AGENTS = {
 _SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+(?=\S)|\n+")
 
 
+# A second request joined on within one sentence: "nausea was a 6, and remind me about Tuesday".
+_JOINED_REQUEST = re.compile(
+    r"(?:,|;|\band\b|\balso\b|\bthen\b|\bplus\b)\s+(?:please\s+|can you\s+|could you\s+)?"
+    r"(?:remind|add|log|book|schedule|note|track|record|put)\b",
+    re.I,
+)
+
+
 def _is_single_request(message: str) -> bool:
-    """One sentence. Keyword shortcuts only apply then, so a shortcut word in one sentence can't
-    swallow a separate request in another ("Pain is a 7. Remind me about Tuesday")."""
-    return len([p for p in _SENTENCE_BREAK.split(message.strip()) if p.strip()]) <= 1
+    """One sentence holding one request. Keyword shortcuts only apply then, so a shortcut word
+    can't swallow a separate request, whether in another sentence ("Pain is a 7. Remind me about
+    Tuesday") or joined on in the same one ("Pain is a 7, and remind me about Tuesday")."""
+    sentences = [p for p in _SENTENCE_BREAK.split(message.strip()) if p.strip()]
+    return len(sentences) <= 1 and not _JOINED_REQUEST.search(message)
 
 # Added (fixed text, not model-written) when the risk screen flags serious distress without
 # a crisis and the reply came from an agent other than emotional support.
