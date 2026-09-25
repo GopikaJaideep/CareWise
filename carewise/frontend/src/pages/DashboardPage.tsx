@@ -5,7 +5,7 @@ import {
 } from "recharts";
 import {
   Activity, Calendar, Battery, Pill, ArrowRight, Loader2, MessageCircle,
-  BellRing, BellOff, Sparkles, RefreshCw, Wind,
+  BellRing, BellOff, Sparkles, RefreshCw, Wind, Volume2,
 } from "lucide-react";
 import { api, type DashboardSummary } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -13,6 +13,8 @@ import { disablePushReminders, enablePushReminders, pushPermission } from "../li
 import { AnimatedNumber } from "../components/AnimatedNumber";
 import { usePageTitle } from "../lib/usePageTitle";
 import { MemoryCard } from "../components/MemoryCard";
+import { BUDDY_NAME, Buddy, useBuddyEnabled } from "../components/Buddy";
+import { speakAsCarrie, stopSpeaking, useCarrieSpeaking, voiceSupported } from "../lib/voice";
 
 const STARTERS = [
   "Mum had nausea this morning, around a 6.",
@@ -29,6 +31,10 @@ export function DashboardPage() {
   const [failed, setFailed] = useState(false);
   const [showCheckin, setShowCheckin] = useState(false);
   const [checkinResult, setCheckinResult] = useState<string | null>(null);
+  const [buddyOn] = useBuddyEnabled();
+  const speaking = useCarrieSpeaking();
+
+  useEffect(() => stopSpeaking, []);
 
   const load = () => {
     setLoading(true);
@@ -105,16 +111,30 @@ export function DashboardPage() {
     <div className="h-full overflow-y-auto">
       <div className="mx-auto max-w-5xl px-4 py-8 md:px-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <p className="text-sm text-ink-600">{greeting}</p>
-            <h1 className="mt-1 font-serif text-3xl font-semibold tracking-tight text-ink-900">
-              {user?.display_name ? `Hi, ${user.display_name}` : "Hi"}
-            </h1>
+          <div className="flex items-center gap-4">
+            {buddyOn && (
+              // A harder week gets a caring Carrie rather than a cheerful one.
+              <Buddy
+                mood={speaking ? "talking" : summary.burnout_category === "high" || summary.burnout_category === "very high" ? "caring" : "idle"}
+                size={72}
+              />
+            )}
+            <div>
+              <p className="text-sm text-ink-600">{greeting}</p>
+              <h1 className="mt-1 font-serif text-3xl font-semibold tracking-tight text-ink-900">
+                {user?.display_name ? `Hi, ${user.display_name}` : "Hi"}
+              </h1>
+              {buddyOn && (
+                <p className="mt-1 text-sm text-ink-600">
+                  {BUDDY_NAME} is here whenever you want to talk.
+                </p>
+              )}
+            </div>
           </div>
           {!isNewUser && (
             <Link to="/app/chat" className="btn-primary">
               <MessageCircle className="h-4 w-4" aria-hidden="true" />
-              Talk to CareWise
+              {buddyOn ? `Talk to ${BUDDY_NAME}` : "Talk to CareWise"}
             </Link>
           )}
         </div>
@@ -149,7 +169,17 @@ export function DashboardPage() {
 
         <div className="mt-6 flex items-start gap-3 rounded-xl border border-sage-200 bg-sage-50 p-4">
           <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-sage-600" aria-hidden="true" />
-          <p className="text-sm italic text-ink-800">"{summary.quote_of_the_day}"</p>
+          <p className="flex-1 text-sm italic text-ink-800">"{summary.quote_of_the_day}"</p>
+          {buddyOn && voiceSupported && (
+            <button
+              onClick={() => speakAsCarrie(summary.quote_of_the_day)}
+              aria-label={`Hear ${BUDDY_NAME} read today's quote`}
+              title={`Hear ${BUDDY_NAME} read it`}
+              className="-m-1 shrink-0 rounded-md p-1 text-sage-700 hover:bg-sage-100"
+            >
+              <Volume2 className="h-4 w-4" aria-hidden="true" />
+            </button>
+          )}
         </div>
 
         <ReminderToggle />

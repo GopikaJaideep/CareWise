@@ -1,4 +1,5 @@
-import { useEffect, useId, useState } from "react";
+import { useId } from "react";
+import { usePreference } from "../lib/preference";
 
 /** The buddy's name, used in the chat's greeting and the show/hide control. */
 export const BUDDY_NAME = "Carrie";
@@ -58,7 +59,7 @@ interface BuddyProps {
 }
 
 /**
- * Carrie: a small forest cat-spirit who helps carry the load. Drawn in SVG so she stays crisp at
+ * Carrie: a small forest cat-spirit who helps carry the load. Drawn in SVG so he stays crisp at
  * any size and can change expression. Decorative only (aria-hidden); the chat announces its own state.
  */
 export function Buddy({ mood = "idle", size = 40, still = false, className = "" }: BuddyProps) {
@@ -199,33 +200,7 @@ export function Buddy({ mood = "idle", size = 40, still = false, className = "" 
   );
 }
 
-const STORAGE_KEY = "carewise.buddy";
-const CHANGE_EVENT = "carewise-buddy-change";
-
-function readEnabled(): boolean {
-  try {
-    return localStorage.getItem(STORAGE_KEY) !== "off";
-  } catch {
-    return true;
-  }
-}
-
 /** Whether to show Carrie. On by default; remembered in this browser only. */
 export function useBuddyEnabled(): [boolean, (enabled: boolean) => void] {
-  const [enabled, setEnabledState] = useState(readEnabled);
-  useEffect(() => {
-    const sync = () => setEnabledState(readEnabled());
-    window.addEventListener(CHANGE_EVENT, sync);
-    return () => window.removeEventListener(CHANGE_EVENT, sync);
-  }, []);
-  const setEnabled = (value: boolean) => {
-    try {
-      localStorage.setItem(STORAGE_KEY, value ? "on" : "off");
-    } catch {
-      // Private mode or blocked storage: still change it for this visit.
-    }
-    setEnabledState(value);
-    window.dispatchEvent(new Event(CHANGE_EVENT));
-  };
-  return [enabled, setEnabled];
+  return usePreference("carewise.buddy", true);
 }

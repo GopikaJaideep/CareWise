@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Send, Loader2, Sparkles, MessageCircle, History, Plus } from "lucide-react";
+import { Send, Loader2, Sparkles, MessageCircle, History, Plus, Volume2, VolumeX } from "lucide-react";
 import {
   api, APIError, StreamUnavailable, type AgentTrace, type ChatResponse, type ConversationSummary, type MessageOut,
   type TurnTrace,
@@ -9,6 +9,8 @@ import { AgentBadge } from "../components/AgentBadge";
 import { BUDDY_NAME, Buddy, moodForReply, useBuddyEnabled, type BuddyMood } from "../components/Buddy";
 import { useAuth } from "../lib/auth";
 import { usePageTitle } from "../lib/usePageTitle";
+import { usePreference } from "../lib/preference";
+import { speakAsCarrie, stopSpeaking, useCarrieSpeaking, voiceSupported } from "../lib/voice";
 
 interface DisplayMessage {
   id: string | number;
@@ -75,6 +77,13 @@ export function ChatPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const refocusComposerRef = useRef(false);
+  const [buddyOn, setBuddyOn] = useBuddyEnabled();
+  const [voicePref, setVoicePref] = usePreference("carewise.voice", false);
+  const voiceOn = voiceSupported && buddyOn && voicePref;
+  const speaking = useCarrieSpeaking();
+
+  // Stop reading aloud when leaving the chat.
+  useEffect(() => stopSpeaking, []);
 
   const openConversation = async (id: number) => {
     setError(null);
@@ -155,6 +164,7 @@ export function ChatPage() {
   const send = async (text: string) => {
     if (!text.trim() || loading) return;
     setError(null);
+    stopSpeaking();
 
     const userMsg: DisplayMessage = {
       id: `temp-${Date.now()}`,
@@ -202,6 +212,7 @@ export function ChatPage() {
         timestamp: new Date(),
       };
       setMessages((m) => [...m.filter((msg) => msg.id !== previewId), assistantMsg]);
+      if (voiceOn) speakAsCarrie(res.content, { calm: moodForReply(assistantMsg.agents) === "steady" });
     } catch (err) {
       // Take the unsent message back out of the thread and return it to the composer, so nothing
       // the person typed is lost and it's clear it wasn't delivered.
@@ -216,11 +227,10 @@ export function ChatPage() {
 
   const isEmpty = messages.length === 0 && !historyLoading;
 
-  const [buddyOn, setBuddyOn] = useBuddyEnabled();
   const lastReply = [...messages].reverse().find((m) => m.role === "assistant" && !m.streaming);
   const replyMood = moodForReply(lastReply?.agents);
   // After a crisis reply Carrie stays steady, even while the person types.
-  const buddyMood: BuddyMood = messages.some((m) => m.streaming)
+  const buddyMood: BuddyMood = messages.some((m) => m.streaming) || (speaking && replyMood !== "steady")
     ? "talking"
     : loading
       ? "thinking"
@@ -249,7 +259,24 @@ export function ChatPage() {
             Past chats{conversations.length > 0 ? ` (${conversations.length})` : ""}
           </button>
           <div className="flex items-center gap-1">
-            <button onClick={() => setBuddyOn(!buddyOn)} aria-pressed={buddyOn} className="btn-ghost text-xs">
+            {voiceSupported && buddyOn && (
+              <button
+                onClick={() => {
+                  const on = !voicePref;
+                  setVoicePref(on);
+                  if (on) speakAsCarrie(`Hi, I'm ${BUDDY_NAME}. I'll read my replies to you.`);
+                  else stopSpeaking();
+                }}
+                aria-pressed={voicePref}
+                aria-label={voicePref ? `Turn off ${BUDDY_NAME}'s voice` : `Turn on ${BUDDY_NAME}'s voice`}
+                title={voicePref ? `${BUDDY_NAME} reads replies aloud` : `Hear ${BUDDY_NAME} read replies aloud`}
+                className="btn-ghost text-xs"
+              >
+                {voicePref ? <Volume2 className="h-3.5 w-3.5" aria-hidden="true" /> : <VolumeX className="h-3.5 w-3.5" aria-hidden="true" />}
+                <span className="hidden sm:inline">Voice {voicePref ? "on" : "off"}</span>
+              </button>
+            )}
+            <button onClick={() => { if (buddyOn) stopSpeaking(); setBuddyOn(!buddyOn); }} aria-pressed={buddyOn} className="btn-ghost text-xs">
               {buddyOn ? `Hide ${BUDDY_NAME}` : `Show ${BUDDY_NAME}`}
             </button>
             <button onClick={startNewChat} className="btn-ghost text-xs">
@@ -371,7 +398,10 @@ export function ChatPage() {
               ref={textareaRef}
               rows={1}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                if (speaking) stopSpeaking(); // they've started to reply
+                setInput(e.target.value);
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
@@ -473,7 +503,18 @@ function MessageBubble({
             )}
           </p>
         </div>
-        {message.turn && <TurnDetails turn={message.turn} />}
+        <div className="flex flex-wrap items-center gap-x-3">
+          {buddy && voiceSupported && !message.streaming && (
+            <button
+              onClick={() => speakAsCarrie(message.content, { calm: isCrisis })}
+              className="mt-1.5 inline-flex items-center gap-1 rounded px-1 py-0.5 text-xs text-ink-600 hover:text-ink-900"
+            >
+              <Volume2 className="h-3 w-3" aria-hidden="true" />
+              Listen
+            </button>
+          )}
+          {message.turn && <TurnDetails turn={message.turn} />}
+        </div>
       </div>
     </div>
   );
