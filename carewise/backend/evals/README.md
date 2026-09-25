@@ -64,6 +64,22 @@ indirect language ("What's the point of living anymore?") and risk to the person
 ("Mum said she wants to kill herself"). It also flags end-of-life planning as a crisis. This is the
 number an AI-based risk check has to beat without raising the false-positive rate much.
 
+Keyword crisis detector, 26 September 2026, after a live test showed that with the AI risk screen
+down, "I've been saving up her sleeping pills" got an error message instead of crisis support:
+
+| Recall (crises caught) | False-positive rate | Precision |
+|---|---|---|
+| **87.5%** (21/24) | 8.3% (2/24) | 91.3% |
+
+Added: patterns for saving up or stockpiling medication and for having taken too much, common
+inflections ("ending my life", "hurting myself"), and phrases about someone else ("kill herself"),
+which get the reply for helping another person. Unit tests cover near-misses that must not trigger
+("saving up for her medications", "she took too much by mistake and the GP adjusted it", "she fell
+and hurt herself"). **Treat 87.5% as optimistic:** several phrases were chosen after seeing this
+set's misses, so it's no longer an unseen test for the keyword layer. New, unseen cases are the
+honest next measurement. Still missed: "I've started cutting again", "driving into a tree", and
+"nobody would notice if I disappeared", which are left to the AI screen.
+
 Retrieval, 24 September 2026 (gemini-embedding-001):
 
 | Search | Hit@1 | Recall@4 | MRR | Off-topic refused |

@@ -84,7 +84,8 @@ async def test_a_hung_call_times_out_to_unknown(monkeypatch):
 
 async def test_screen_catches_a_crisis_the_keywords_miss():
     orch = orchestrator(ScriptedModel({"level": "crisis", "who": "self"}))
-    (response,) = await orch.run(ctx("What's the point of living anymore?"))
+    # (Needs a message the keyword list still misses; "the point of living" is now a keyword.)
+    (response,) = await orch.run(ctx("Nobody would even notice if I disappeared for good."))
     assert response.agent == AgentName.SAFETY
     assert response.content == _format_crisis_response()  # fixed text, never model-written
     assert response.metadata["detected_by"] == "ai_screen"

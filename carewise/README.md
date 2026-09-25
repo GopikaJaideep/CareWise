@@ -29,7 +29,7 @@ From `python -m evals.run` (see [`backend/evals/README.md`](backend/evals/README
 |---|---|
 | Retrieval, keyword only | right article first 76.7%, in top 4 86.7%, off-topic refused 90% |
 | Retrieval, hybrid (+ Gemini embeddings) | right article first **100%**, in top 4 **100%**, off-topic refused 90% |
-| Crisis detection, keyword layer alone | 50% recall (12/24) at 8.3% false alarms: the baseline the AI risk screen is measured against |
+| Crisis detection, keyword layer alone | 87.5% recall (21/24) at 8.3% false alarms, up from 50%; optimistic, since the new phrases and patterns were added after seeing this set's misses |
 | Routing, extraction, keyword + AI risk screen | pending a full model run |
 
 The retrieval cutoffs were tuned on the same small set they're measured on, so treat the hybrid numbers as optimistic. The eval README spells out what these numbers can and can't tell you.
@@ -202,7 +202,7 @@ Full OpenAPI schema at `/docs` when running.
 
 - **Not a clinician.** Prompts and the knowledge base are written for clarity, not clinically validated; a real deployment would need review by clinicians and people with lived caregiving experience.
 - **Small, author-written eval sets.** They catch regressions and compare models; they can't catch blind spots the author shares.
-- **Indirect crisis language** is harder: the keyword layer catches half of the eval's crisis messages on its own; the AI screen's real-world recall is still to be measured.
+- **Indirect crisis language** is harder: the keyword layer misses messages like "nobody would notice if I disappeared", and its 87.5% was measured on the set its phrases were tuned on; the AI screen's real-world recall is still to be measured. When the model is down, the keyword layer is all that's left, so every failed reply also gives 000 and Lifeline.
 - **Not a compliance-reviewed product:** no HIPAA / Australian Privacy Principles review, audit log retention policy or multi-region deployment.
 
 **In a crisis, call 000 (Australia) or your local emergency number. Lifeline: 13 11 14, 24/7.**

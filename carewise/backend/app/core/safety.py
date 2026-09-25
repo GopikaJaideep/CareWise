@@ -31,6 +31,9 @@ class SafetyCheck:
     triggers: list[str]
     requires_intervention: bool
     suggested_response: str | None = None
+    # True when every phrase that matched is about someone else ("mum said she wants to kill
+    # herself"), so the reply is the one for helping another person rather than the writer.
+    someone_else: bool = False
 
 
 CRISIS_RESOURCES = {
@@ -67,6 +70,33 @@ CORE_CRISIS_PHRASES = [
     "dont want to be here anymore", "dont want to wake up",
     "hurt myself", "harm myself", "self-harm", "self harm",
     "overdose", "take all my pills",
+    "ending my life", "hurting myself", "cutting myself", "rather be dead", "want it all to end",
+    "point of living", "point in living",
+]
+
+# About someone else being at risk, usually the person being cared for. Deliberately narrower than
+# the first-person list: "she fell and hurt herself" and "end her life" (voluntary assisted dying is
+# a legitimate topic here) are left to the AI risk screen, which reads context.
+THIRD_PARTY_CRISIS_PHRASES = [
+    "kill herself", "kill himself", "kill themselves", "killing herself", "killing himself", "killing themselves",
+    "harm herself", "harm himself", "harm themselves", "harming herself", "harming himself",
+]
+
+_MEDS = r"(?:pills|tablets|meds|medications?|medicines?|painkillers|morphine|opioids|oxycodone|sleepers)"
+# Method language that a fixed phrase list can't cover. Checked on normalised text (no apostrophes),
+# within one sentence ([^.!?]).
+CRISIS_PATTERNS = [
+    # Saving up or stockpiling medication, whoever's it is ("saving up her sleeping pills", "he's
+    # hoarding his tablets"). Not "saving up for her medication", which is about money.
+    ("stockpiling medication", re.compile(
+        rf"\b(?:sav(?:e|es|ed|ing)\s+(?:them\s+)?up(?!\s+for\b)|stockpil\w*|hoard\w*|stash\w*)\b[^.!?]{{0,30}}\b{_MEDS}\b")),
+    ("stockpiling medication", re.compile(rf"\b{_MEDS}\b[^.!?]{{0,20}}\b(?:saved|saving|stockpiled|hoarded|stashed)\s+up\b")),
+    # The writer having taken too much ("I took a lot more of my sleeping pills than I should have").
+    # First person only: "she took too much by mistake and the GP adjusted it" is a medication error
+    # for her team, not a crisis. Not "I took all my tablets like the doctor said" either.
+    ("took too much medication", re.compile(
+        rf"\b(?:i|ive|i have)\s+(?:just\s+|already\s+)?(?:took|taken|swallowed)\b[^.!?]{{0,25}}\b(?:too many|too much|way more|a lot more|much more)\b[^.!?]{{0,25}}\b{_MEDS}\b")),
+    ("taking all their medication", re.compile(rf"\btaking all (?:of )?my {_MEDS}\b")),
 ]
 
 
@@ -85,13 +115,17 @@ def detect_crisis(text: str) -> SafetyCheck:
     lower = _normalise(text)
     phrases = dict.fromkeys(CORE_CRISIS_PHRASES + [_normalise(k) for k in settings.crisis_keywords_list])
     triggers = [kw for kw in phrases if kw in lower]
+    triggers += [name for name, pattern in CRISIS_PATTERNS if pattern.search(lower) and name not in triggers]
+    third_party = [kw for kw in THIRD_PARTY_CRISIS_PHRASES if kw in lower]
 
-    if triggers:
+    if triggers or third_party:
+        someone_else = not triggers
         return SafetyCheck(
             risk_level=RiskLevel.CRITICAL,
-            triggers=triggers,
+            triggers=triggers + third_party,
             requires_intervention=True,
-            suggested_response=_format_crisis_response(),
+            suggested_response=_format_third_party_crisis_response() if someone_else else _format_crisis_response(),
+            someone_else=someone_else,
         )
 
     # Secondary signals — emotional distress without explicit crisis terms

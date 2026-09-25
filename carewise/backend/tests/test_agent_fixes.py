@@ -70,6 +70,61 @@ def test_everyday_caregiving_language_is_not_a_crisis():
     assert not detect_crisis("Mum had nausea this morning and I'm exhausted").requires_intervention
 
 
+@pytest.mark.parametrize(
+    "message",
+    [
+        # Missed in a live test while the AI risk screen was down: only the keyword check was left.
+        "I've been saving up her sleeping pills, just in case it all gets too much.",
+        "He's been stockpiling his morphine.",
+        "I've got a stash of tablets put aside.",
+        "I took a lot more of my sleeping pills than I should have tonight.",
+        "I've taken way too many of my tablets",
+        "I keep thinking about taking all my pills at once.",
+        "I've been thinking about ending my life.",
+        "I'd rather be dead than keep living like this.",
+    ],
+)
+def test_method_and_indirect_language_triggers_the_safety_response(message):
+    check = detect_crisis(message)
+    assert check.requires_intervention and not check.someone_else
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "I'm saving up for her medications, they're expensive.",  # money, not stockpiling
+        "She has to take all her pills with food or she gets sick.",
+        "I collected her tablets from the pharmacy.",
+        "I took all my tablets this morning like the doctor said.",
+        "She took too much of her painkillers by mistake and the GP adjusted the dose.",
+        "She fell and hurt herself in the garden.",
+        "We talked with the team about voluntary assisted dying to end her life peacefully.",
+    ],
+)
+def test_near_misses_are_not_a_crisis(message):
+    assert not detect_crisis(message).requires_intervention
+
+
+async def test_someone_else_at_risk_gets_the_reply_for_helping_them():
+    from app.agents.safety import SafetyAgent
+    from app.core.safety import _format_third_party_crisis_response
+
+    check = detect_crisis("Mum said she wants to kill herself and I don't know what to do.")
+    assert check.requires_intervention and check.someone_else
+    response = await SafetyAgent().handle(ctx("Mum said she wants to kill herself and I don't know what to do."))
+    assert response.content == _format_third_party_crisis_response()
+    # If the writer is at risk too, their reply comes first.
+    assert not detect_crisis("I want to die, and mum said she wants to kill herself.").someone_else
+
+
+def test_a_failed_reply_still_says_where_to_get_help():
+    # When the model is down the AI risk screen usually is too, so this message may be all a
+    # person in crisis sees.
+    from app.services.llm import ERROR_MESSAGE
+
+    assert "000" in ERROR_MESSAGE and "13 11 14" in ERROR_MESSAGE
+
+
 # --- Routing ------------------------------------------------------------------------------------
 
 @pytest.mark.parametrize(

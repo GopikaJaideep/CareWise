@@ -23,7 +23,12 @@ T = TypeVar("T", bound=BaseModel)
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 GEMINI_STREAM_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:streamGenerateContent?alt=sse"
-ERROR_MESSAGE = "I'm having trouble responding right now. Could you try again in a moment?"
+# Shown when the model can't reply. Then the AI risk screen is usually down too, leaving only the
+# keyword check, so every failed reply also says where to get help now.
+ERROR_MESSAGE = (
+    "I'm having trouble replying right now, so please try again in a moment. "
+    "If you or the person you care for isn't safe, call 000, or Lifeline on 13 11 14 (24/7)."
+)
 RETRYABLE_STATUS = {429, 500, 503}
 GEMINI_MAX_ATTEMPTS = 3
 
