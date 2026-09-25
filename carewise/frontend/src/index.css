@@ -43,6 +43,26 @@
   }
 }
 
+/* Carrie, the chat buddy (components/Buddy.tsx). Slow and quiet on purpose. */
+.buddy-blink { animation: buddyBlink 5.5s infinite; transform-box: fill-box; transform-origin: center; }
+.buddy-twitch { animation: buddyTwitch 7s ease-in-out infinite; transform-origin: 44px 24px; }
+.buddy-glow { animation: buddyGlow 4s ease-in-out infinite; }
+.buddy-breathe { animation: buddyBreathe 4.5s ease-in-out infinite; }
+.buddy-hop { animation: buddyHop 700ms cubic-bezier(0.34, 1.56, 0.64, 1) 1; }
+.buddy-talk { animation: buddyTalk 360ms ease-in-out infinite alternate; transform-box: fill-box; transform-origin: center; }
+.buddy-heart { animation: buddyHeart 1.8s ease-out 1 forwards; }
+@keyframes buddyBlink { 0%, 93%, 100% { transform: scaleY(1); } 95.5% { transform: scaleY(0.1); } }
+@keyframes buddyTwitch { 0%, 88%, 100% { transform: rotate(0); } 91% { transform: rotate(8deg); } 94% { transform: rotate(-2deg); } }
+@keyframes buddyGlow { 0%, 100% { opacity: 0.85; } 50% { opacity: 1; filter: drop-shadow(0 0 1.5px #A8E4D9); } }
+@keyframes buddyBreathe { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-0.8px); } }
+@keyframes buddyHop { 0% { transform: translateY(0); } 40% { transform: translateY(-3px); } 100% { transform: translateY(0); } }
+@keyframes buddyTalk { from { transform: scaleY(0.45); } to { transform: scaleY(1); } }
+@keyframes buddyHeart {
+  0% { opacity: 0; transform: translateY(2px); }
+  25% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-7px); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
