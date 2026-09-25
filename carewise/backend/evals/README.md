@@ -19,6 +19,7 @@ From `carewise/backend`:
 python -m evals.run                          # every suite the current setup can run
 python -m evals.run --suite routing --limit 10
 python -m evals.run --delay 4                # space out calls on the Gemini free tier
+python -m evals.run --resume --delay 4       # continue a run across days of free-tier quota
 python -m evals.run --provider anthropic --model claude-sonnet-5   # compare models
 ```
 
@@ -30,6 +31,14 @@ runs. Each run writes a Markdown report and a JSON file with every case to `eval
 If more than 20% of a suite's cases fail at the API (quota exhausted, outage, blocked reply), the
 run stops with exit code 2 and writes no report: those scores would measure the outage, not the
 model. Isolated failures are excluded from scoring and listed under "Excluded cases".
+
+**When the quota is smaller than a run.** The Gemini free tier can allow as few as 20 requests per
+model per day, while a full run needs about 200. `--resume` saves every successful answer to
+`evals/.cache/` (git-ignored) and replays saved answers on the next run without calling the API, so
+each day's quota goes only to unanswered cases. Run the same command daily until it finishes; the
+report then says how many answers were replayed. Scores are the same as a single run's, and latency
+is the model's original time, not the cache's. Failed calls are never saved, so they are retried.
+Changing a prompt changes the key, so edited prompts are re-asked rather than scored on old answers.
 
 `--fail-under SUITE.METRIC=MIN` turns a run into a regression gate. CI (`.github/workflows/ci.yml`)
 runs the offline suites on every push and pull request and fails the build if crisis recall or
