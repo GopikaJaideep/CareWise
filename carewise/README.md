@@ -1,281 +1,218 @@
 # CareWise
 
-> An AI companion for cancer caregivers — agentic, safety-first, evidence-grounded.
+[![CI](https://github.com/GopikaJaideep/CareWise/actions/workflows/ci.yml/badge.svg)](https://github.com/GopikaJaideep/CareWise/actions/workflows/ci.yml)
 
-CareWise is a full-stack application built around an **agentic orchestration architecture** with five specialised LLM agents and a deterministic safety layer. It is designed for the people who hold someone else up: tracking symptoms, coordinating care, surfacing trustworthy information, monitoring caregiver burnout, and offering a calm, non-judgmental presence.
+> A calm AI companion for people caring for someone with cancer: talk things through, log symptoms, and keep appointments and medications in one place, just by typing like you'd text a friend.
 
-This is a portfolio project demonstrating production-grade patterns for healthcare-adjacent AI: explicit medical-boundary enforcement, deterministic crisis paths (no LLM creativity in the safety code path), retrieval-grounded resource answers with source citation, structured-output extraction, and cycle-protected agent handoffs.
+CareWise is a full-stack, multi-agent application built to the standard healthcare-adjacent AI needs: a deterministic safety path, measured behaviour (an eval suite that gates CI), grounded and cited answers, and privacy by default.
+
+**Try it:** on the home page, choose **"Try it without signing up"**. You get a private demo account pre-filled with a week of sample data (symptoms, appointments, medications, wellbeing check-ins), deleted after 24 hours.
 
 ---
 
-## Architecture
+## What's worth looking at
 
+| | |
+|---|---|
+| **Evals, not vibes** | 215 labelled cases across routing, crisis detection, extraction and retrieval (`backend/evals/`). CI fails the build if crisis detection or retrieval regress below baseline. The runner refuses to publish scores during an API outage instead of reporting it as bad accuracy. |
+| **Safety that can't be talked out of it** | Keyword crisis detection runs first and never waits for a model; an AI risk screen runs *in parallel* with routing to catch indirect language and risk to the person being cared for. Either way the crisis reply is fixed, reviewed text, never model-written. |
+| **Grounded answers** | The resource guide answers only from 16 original articles (51 sections) via hybrid BM25 + embedding search, cites what it used, and says "I don't know" when nothing is relevant. Source links are attached by code, so they can't be invented. |
+| **Streaming without skipping the filter** | Replies stream a sentence at a time, and each sentence passes the output safety filter (no doses, diagnoses or cure promises) *before* it's shown. |
+| **Glass box** | Every turn is traced (routing method, agents, each model call's latency and tokens) and shown under the reply as "How this reply was made". Logs carry no message text or health details. |
+| **Privacy by default** | Memory between chats is opt-in, fully visible and deletable; contact details and crisis content are never stored (enforced in code). |
+
+### Measured results
+
+From `python -m evals.run` (see [`backend/evals/README.md`](backend/evals/README.md) for methodology and caveats):
+
+| What | Result |
+|---|---|
+| Retrieval, keyword only | right article first 76.7%, in top 4 86.7%, off-topic refused 90% |
+| Retrieval, hybrid (+ Gemini embeddings) | right article first **100%**, in top 4 **100%**, off-topic refused 90% |
+| Crisis detection, keyword layer alone | 50% recall (12/24) at 8.3% false alarms: the baseline the AI risk screen is measured against |
+| Routing, extraction, keyword + AI risk screen | pending a full model run |
+
+The retrieval cutoffs were tuned on the same small set they're measured on, so treat the hybrid numbers as optimistic. The eval README spells out what these numbers can and can't tell you.
+
+---
+
+## How a message is handled
+
+```mermaid
+flowchart TD
+    M([Caregiver's message]) --> K{Keyword crisis check<br/>deterministic, no model}
+    K -- crisis --> S[Safety agent<br/>fixed, reviewed reply]
+    K -- no --> P
+    subgraph P [In parallel]
+        R[Router<br/>shortcuts, follow-ups,<br/>up to 3 intents]
+        X[AI risk screen<br/>crisis / concern / none,<br/>and who is at risk]
+    end
+    X -- crisis --> S
+    R --> A[Agents, each on its part of the message]
+    A --> E[Emotional support]
+    A --> ST[Symptom tracker]
+    A --> CC[Care coordinator]
+    A --> RG[Resource guide<br/>hybrid search + citations]
+    A --> BM[Burnout monitor]
+    E & ST & CC & RG & BM --> F[Output filter<br/>no doses, diagnoses or cure promises]
+    S --> SAVE
+    F --> SAVE[Save reply and trace]
+    F -. streamed sentence by sentence .-> U([Caregiver sees the reply])
+    SAVE --> U
+    SAVE -. background, if memory is on .-> MEM[(Memory update)]
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                         User message                              │
-└────────────────────────────────┬─────────────────────────────────┘
-                                 ▼
-                 ┌───────────────────────────────┐
-                 │   Pre-flight safety check     │   ← deterministic
-                 │   (regex-based crisis detect) │     (no LLM)
-                 └──────────────┬────────────────┘
-                                │ crisis?  ──► Safety Agent ──► verified resources
-                                ▼
-                 ┌───────────────────────────────┐
-                 │      Intent classification     │   ← cheap heuristic
-                 │   (heuristic + LLM fallback)   │     + LLM
-                 └──────────────┬────────────────┘
-                                ▼
-        ┌───────────────────────┴────────────────────────┐
-        │                                                │
-        ▼                ▼               ▼               ▼               ▼
- Emotional        Symptom          Care            Resource         Burnout
- Support          Tracker          Coordinator     Guide            Monitor
- (LLM)            (LLM + DB)       (LLM + DB)      (RAG-style       (LLM + DB +
-                                                    KB + LLM)        scoring algo)
-        │                                                │
-        └─────────────► Handoff loop (max 3 hops) ◄──────┘
-                       Cycle-protected via visited set
-                                │
-                                ▼
-                     ┌──────────────────────┐
-                     │  Output validation   │   ← regex-based
-                     │  (dosage, diagnosis, │     final pass
-                     │   outcome promises)  │
-                     └──────────┬───────────┘
-                                ▼
-                       Persisted response
-```
 
-### Agents
+**Agents**
 
-| Agent | Responsibility | Notable design choice |
+| Agent | Does | Notable |
 |---|---|---|
-| **Emotional Support** | Listens, validates, reflects | Hands off to Safety Agent on crisis signals; informed by recent burnout score |
-| **Symptom Tracker** | Extracts structured symptom/medication data from natural language | Two-step pipeline: JSON extraction → DB write → human-language confirmation |
-| **Care Coordinator** | Tasks, appointments, reminders | Handles add / list / mark-done in one turn; resolves relative dates ("Thursday") to absolute |
-| **Resource Guide** | General information from vetted sources | Curated knowledge base (Cancer Council AU, NCCN, ACS); always cites; refuses out-of-scope questions |
-| **Burnout Monitor** | Structured wellbeing check-ins, weighted score, trend tracking | Trend amplification when last 3 scores increasing; deterministic resource surfacing at high scores |
-| **Safety** | Crisis-level content | **Deterministic — no LLM call**. Verified Lifeline / Beyond Blue / Carer Gateway numbers |
+| Emotional support | Listens and validates | Never diagnoses; uses remembered context when memory is on; told to check in gently when the risk screen flags distress |
+| Symptom tracker | Logs symptoms and medications from plain language | Validated structured extraction; asks for a 1-10 severity rather than guessing one; answers "what have we logged?" from the records |
+| Care coordinator | Appointments, errands, reminders | Resolves "Tuesday at 10" in the caregiver's timezone |
+| Resource guide | General information | Hybrid retrieval over a curated library; cites sources; refuses when nothing is relevant |
+| Burnout monitor | Wellbeing check-ins and trend | Weighted score with a trend amplifier; out-of-range answers are asked again, not saved |
+| Safety | Crisis content | **No model call**: fixed text with verified numbers, including a version for when the person at risk is the one being cared for |
 
-### Safety guardrails
-
-CareWise treats safety as a separate concern from helpfulness, layered at every stage:
-
-1. **Pre-flight** — keyword-based crisis detection runs before any LLM call. Crisis content short-circuits the orchestrator and returns a deterministic response with verified resources.
-2. **Per-agent** — the emotional support agent's system prompt explicitly forbids diagnosis, prognosis, and toxic positivity. The resource guide is restricted to retrieved context.
-3. **Output validation** — every LLM response runs through a final regex pass that blocks specific dosages, definitive diagnoses, and outcome promises ("this will cure her").
-4. **Logging** — PII redaction (phone numbers, emails, Medicare numbers) before any log line is written.
-
-The full rationale and the test suite verifying this behaviour live in `backend/app/core/safety.py` and `backend/tests/test_safety.py`.
+**Every model output is validated** against a Pydantic schema (`backend/app/agents/outputs.py`) with one repair retry; a failed API call is never retried as a "repair".
 
 ---
 
 ## Tech stack
 
-**Backend** — Python 3.12, FastAPI, SQLAlchemy 2.0 (async), Anthropic SDK, JWT auth, Pytest
-
-**Frontend** — React 18 + TypeScript, Vite, Tailwind CSS, Recharts, React Router
-
-**Deployment** — Docker Compose (backend + frontend with nginx reverse proxy)
+**Backend:** Python 3.12, FastAPI, SQLAlchemy 2 (async), Alembic, Pydantic 2, Gemini or Anthropic, Postgres (SQLite for local development), pytest.
+**Frontend:** React 18, TypeScript, Vite, Tailwind CSS, Recharts.
+**Ops:** GitHub Actions (tests, eval gates, type-check and build), Render (backend), Vercel (frontend), Docker Compose for local full-stack.
 
 ---
 
-## Quickstart
+## Running it
 
-### Option 1 — Docker Compose (recommended)
+### Local development
 
 ```bash
-# 1. Clone and configure
-git clone <your-fork-url> carewise && cd carewise
-cp .env.example .env
-# Edit .env and add your ANTHROPIC_API_KEY
-
-# 2. Build and run
-docker compose up --build
-
-# 3. Open http://localhost:8080
-```
-
-The first build takes ~2 minutes. Backend runs on `:8000`, frontend on `:8080`.
-
-### Option 2 — Local development
-
-**Backend:**
-```bash
+# Backend
 cd backend
-python -m venv .venv && source .venv/bin/activate
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-export ANTHROPIC_API_KEY=sk-ant-...
+cp ../.env.example .env        # add GEMINI_API_KEY (free) or ANTHROPIC_API_KEY
 uvicorn app.main:app --reload
-```
 
-**Frontend (in a separate terminal):**
-```bash
+# Frontend, in another terminal
 cd frontend
 npm install
-npm run dev
+npm run dev                    # http://localhost:5173, proxies /api to :8000
 ```
 
-Open `http://localhost:5173`. The Vite dev server proxies `/api/*` to the backend on `:8000`.
+Without an API key, CareWise runs in demo mode: routing uses deterministic rules, the resource guide quotes its sources directly, and other replies are clearly marked as demo text.
 
-### Without an API key
+### Docker Compose
 
-CareWise will run without `ANTHROPIC_API_KEY` set — agents return clearly-marked demo responses so you can explore the UI, auth, persistence, and routing without spending tokens.
+```bash
+cp .env.example .env && docker compose up --build   # http://localhost:8080
+```
 
-### Deploying the backend: keep your data
+### Tests and evals
 
-By default the backend stores everything in a SQLite file inside the server. Most hosts (Render, Railway, Koyeb, Fly without a volume) reset the server's disk on every deploy, which **deletes every account and record**. For any hosted deployment, point `DATABASE_URL` at a Postgres database instead (Neon, Supabase and Render all have free tiers):
+```bash
+cd backend
+python -m pytest -q                      # 242 tests
+python -m evals.run --suite crisis,retrieval   # offline suites, no key needed
+python -m evals.run --delay 4            # all suites, with a model key
+```
+
+---
+
+## Deploying
+
+### Keep your data: use Postgres
+
+By default the backend stores data in a SQLite file on the server. Hosts such as Render reset the disk on every deploy, **which deletes every account**. For any hosted deployment, set `DATABASE_URL` to a Postgres database (Neon, Supabase and Render all have free tiers), exactly as your provider shows it:
 
 ```
 DATABASE_URL=postgresql://user:password@host/dbname?sslmode=require
 ```
 
-Paste the URL exactly as your provider shows it; `postgres://` and `sslmode=` are converted for the async driver automatically. Tables are created on first start. Also set a fixed `SECRET_KEY`, or everyone is signed out whenever it changes. The startup log says which database is in use.
+A direct (unpooled) connection string is best. A pooled one (Neon's `-pooler` host, Supabase's port 6543) also works: the backend detects it and turns off the prepared-statement caching that transaction pooling breaks.
 
-### How the resource guide finds answers
+Also set a fixed `SECRET_KEY`, or everyone is signed out whenever it changes. Check a deploy at **`/health`**: `"persistent": true` means Postgres; `false` means data will be lost on the next deploy.
 
-The resource guide answers only from a curated library of original plain-language articles in `backend/app/knowledge/`, each linked to its source (Cancer Council, Carer Gateway, Services Australia, ACS...). Every answer cites the sections it used, and the source list is added by code, not written by the model, so links can't be invented. If nothing relevant is found, it says so rather than guessing.
+Migrations (Alembic) run automatically at startup. After changing a model, generate one with `alembic revision --autogenerate -m "..."` from `backend/`, and review it: a test renders every migration as Postgres SQL, because autogenerate writes SQLite spellings (like a boolean default of `'0'`) that Postgres rejects.
 
-Search is hybrid: BM25 keyword ranking always runs; with `GEMINI_API_KEY` set, Gemini embeddings add semantic search, merged by reciprocal-rank fusion, behind a relevance cutoff. Section vectors are cached in the database, so restarts don't re-embed. Measured with `python -m evals.run --suite retrieval` on 30 questions and 10 off-topic ones:
+### Other settings
 
-| Search | Right article first | Right article in top 4 | Off-topic refused | Median search time |
-|---|---|---|---|---|
-| Keyword only | 76.7% | 86.7% | 90% | <1 ms |
-| Hybrid (+ Gemini embeddings) | 100% | 100% | 90% | ~1 s |
+- **Separate model keys for production and evals.** An eval run can exhaust a free-tier daily quota and take the live app's replies down with it.
+- **Email** (password reset, address confirmation) goes through Resend (`RESEND_API_KEY`). Until a sending domain is verified, Resend only delivers to the account owner, so address confirmation is a reminder, not a requirement.
+- `LLM_PRICE_INPUT_PER_MTOK` / `LLM_PRICE_OUTPUT_PER_MTOK` (USD per million tokens) add cost estimates to traces; none are assumed.
 
-Keyword search misses paraphrases ("he keeps throwing up", "she won't eat"); semantic search recovers all of them. The relevance cutoffs were tuned on this same small set, so treat the hybrid numbers as optimistic until more questions (and a held-out set) are added. Embeddings are built in the background at startup, never inside a user's request, and until they're ready search uses keywords.
+---
+
+## How specific parts work
+
+### The resource guide
+
+It answers only from original plain-language articles in `backend/app/knowledge/`, each linked to its source (Cancer Council, Carer Gateway, Services Australia, ACS, Palliative Care Australia). Search is hybrid: BM25 always runs; with `GEMINI_API_KEY` set, Gemini embeddings add semantic search, merged by reciprocal-rank fusion behind a relevance cutoff. Section vectors are cached in the database and built by a background warm-up at startup, never inside a person's request.
 
 Similarity is computed in Python: across ~50 sections that takes well under a millisecond. At thousands of sections, the next step is pgvector (an indexed `vector` column and `ORDER BY embedding <=> :query`), which Neon, Supabase and Render Postgres all support.
 
-To add an article, drop a Markdown file in `backend/app/knowledge/` (header lines `title:`, `source:`, `url:`, `region:`, then `## ` sections) and add a few questions for it to `evals/datasets/retrieval.jsonl`.
-
-### Seeing how a reply was made
-
-Every chat turn is traced (`backend/app/core/tracing.py`): how it was routed (keyword shortcut, follow-up, AI router, demo fallback or safety check), which agents ran, each AI call's latency and tokens (input, output, thinking), the resource guide's search mode and sections, and total time. The trace is stored with the reply and shown under it in the chat as "How this reply was made". Each turn also writes one structured `chat_turn` line to the server log, with no message text and no article names, so logs hold no health details. Set `LLM_PRICE_INPUT_PER_MTOK` and `LLM_PRICE_OUTPUT_PER_MTOK` (USD per million tokens) to add cost estimates; none are assumed.
+To add an article, drop a Markdown file in `backend/app/knowledge/` (header lines `title:`, `source:`, `url:`, `region:`, then `## ` sections) and add questions for it to `backend/evals/datasets/retrieval.jsonl`.
 
 ### Memory between chats (opt-in)
 
-CareWise can remember durable facts between chats, such as a treatment schedule, the care team, or what helps the caregiver unwind, so they don't have to repeat themselves. It is **off until the person turns it on** on their Home page, where every remembered fact is listed and can be deleted; turning it off forgets everything. A background task updates memory every few messages after the reply is sent, so it never adds latency. It never stores contact details, ID numbers or anything about suicide, self-harm or a crisis: that is enforced in code (`backend/app/services/memory.py`), not only in the prompt, and turns that reached the safety response are skipped.
+CareWise can remember durable facts between chats (a treatment schedule, the care team, what helps) so people don't repeat themselves. It is **off until turned on** on the Home page, where every fact is listed and deletable; turning it off forgets everything. A background task updates memory every few messages, after the reply is sent. Contact details, ID numbers and anything about suicide, self-harm or a crisis are never stored: enforced in code (`backend/app/services/memory.py`), and turns that reached the safety response are skipped.
 
-### Changing the database schema
+### Accounts
 
-Migrations (Alembic) run automatically when the backend starts, so deploys need no manual step. After changing a model in `app/models/db.py`, generate and commit a migration from `backend/`:
-
-```
-alembic revision --autogenerate -m "add notes to care tasks"
-```
-
-Review the generated file in `migrations/versions/`. `tests/test_migrations.py` fails if the models and migrations ever drift apart. Databases created before migrations were introduced are adopted automatically on first start.
+Sign-up rejects email domains that don't exist or don't accept mail (a DNS check), and emails a confirmation link; emails are matched ignoring case. Tokens carry a purpose, so a confirmation link can't be used to log in. The one-click demo creates a private account per visitor, capped at 20 messages, 5 new demos per address per hour and 200 live at once, and deleted after 24 hours.
 
 ---
 
-## Repository layout
-
-```
-carewise/
-├── backend/
-│   ├── app/
-│   │   ├── agents/          # The orchestrator + 6 specialist agents
-│   │   │   ├── orchestrator.py
-│   │   │   ├── emotional_support.py
-│   │   │   ├── symptom_tracker.py
-│   │   │   ├── care_coordinator.py
-│   │   │   ├── resource_guide.py
-│   │   │   ├── burnout_monitor.py
-│   │   │   └── safety.py
-│   │   ├── api/             # FastAPI routes (auth, chat, tracking)
-│   │   ├── core/            # Config, auth, DB, safety guardrails
-│   │   ├── models/          # SQLAlchemy ORM models
-│   │   └── services/        # LLM client wrapper
-│   └── tests/               # 25 tests — safety, burnout, orchestrator
-├── frontend/
-│   ├── src/
-│   │   ├── components/      # Shared UI (AppShell, AgentBadge)
-│   │   ├── pages/           # Landing, auth, dashboard, chat, tasks, symptoms, resources
-│   │   ├── lib/             # API client, auth context
-│   │   └── App.tsx
-│   └── nginx.conf
-├── docker-compose.yml
-├── .env.example
-└── README.md
-```
-
----
-
-## Testing
-
-```bash
-cd backend
-pytest -v
-```
-
-The test suite covers what matters most for a healthcare-adjacent AI system:
-
-- **Crisis detection** — explicit suicide language, self-harm, secondary distress signals, no-false-positive cases
-- **Medical overreach detection** — diagnosis requests, dosage questions, distinguishing from normal logging
-- **Output validation** — blocks dosages, diagnoses, outcome promises; allows safe responses
-- **PII redaction** — phone numbers (US + AU mobile formats), emails, Medicare numbers
-- **Burnout scoring** — boundary cases, score-cap, trend amplification
-- **Orchestrator** — handoff handling, **cycle detection** when agents try to hand off to each other in a loop, crisis short-circuit
-
-```
-============================== 25 passed in 1.37s ==============================
-```
-
----
-
-## API surface
+## API
 
 | Endpoint | Method | Description |
 |---|---|---|
-| `/api/auth/register` | POST | Create account with caregiver context |
-| `/api/auth/login` | POST | Returns JWT |
-| `/api/auth/me` | GET | Current user |
-| `/api/chat` | POST | **Primary entry point** — runs orchestrator, returns response with agent trace |
-| `/api/chat/conversations` | GET | List conversations |
-| `/api/chat/conversations/{id}` | GET | Conversation with messages |
-| `/api/symptoms` | GET | Recent symptom logs |
-| `/api/medications` | GET | Active medications |
-| `/api/tasks` | GET / POST | List / create care tasks |
-| `/api/tasks/{id}/complete` | PATCH | Mark task done |
-| `/api/burnout/checkins` | GET | Burnout check-in history |
-| `/api/dashboard` | GET | Aggregated summary |
+| `/api/auth/register`, `/login`, `/me` | POST, POST, GET | Accounts |
+| `/api/auth/demo` | POST | Private, pre-filled demo account |
+| `/api/auth/verify-email`, `/resend-verification` | POST | Email confirmation |
+| `/api/auth/forgot-password`, `/reset-password` | POST | Password reset |
+| `/api/chat` | POST | One chat turn: reply, agent trace and per-turn trace |
+| `/api/chat/stream` | POST | The same turn as server-sent events (safety-filtered preview, then the final reply) |
+| `/api/chat/conversations`, `/{id}` | GET | Chat history |
+| `/api/symptoms`, `/api/medications`, `/api/tasks` | GET, POST | Tracking |
+| `/api/burnout/checkins` | GET, POST | Wellbeing check-ins |
+| `/api/memory`, `/enabled`, `/{id}` | GET, PUT, DELETE | What CareWise remembers |
+| `/api/dashboard` | GET | Home page summary |
+| `/health` | GET | Status, and whether data survives a redeploy |
 
-Full OpenAPI schema at `http://localhost:8000/docs` when running.
+Full OpenAPI schema at `/docs` when running.
 
 ---
 
 ## Design decisions worth defending
 
-1. **Why a deterministic safety path?** LLMs are non-deterministic by design. A user in crisis doesn't need creative phrasing — they need correct, vetted resources every time. The Safety Agent never calls the LLM; it returns a fixed template with verified phone numbers.
-
-2. **Why intent classification before agent invocation?** Letting one big "do everything" prompt handle every caregiver message conflates concerns and makes evaluation impossible. With explicit routing, each agent has a narrow contract, a focused system prompt, and is independently testable.
-
-3. **Why cycle protection?** Agents can hand off to each other (emotional support → safety, for example). Without a `visited` set and hop limit, two agents that hand off to each other would loop forever on a single user turn. The `visited` set in `SessionContext` prevents this.
-
-4. **Why structured extraction in two LLM passes?** The Symptom Tracker agent first runs a JSON-extraction pass (`temperature=0.2`, schema-constrained) to capture data, then a separate generation pass (`temperature=0.4`) to produce a warm confirmation. Mixing data extraction and conversational generation in one prompt produces unreliable JSON.
-
-5. **Why a curated knowledge base instead of a general RAG?** For a portfolio demo, a curated dictionary of Cancer Council / NCCN / ACS topics demonstrates the citation pattern and refusal-when-out-of-scope behaviour without requiring a vector store and document corpus. The retrieval interface is abstracted so it can be swapped for a real RAG pipeline (e.g., pgvector or Pinecone) without changing the agent.
+1. **A deterministic safety path.** A person in crisis needs the right phone numbers every time, not creative phrasing. The model may decide *that* the safety path is taken; it never writes the words.
+2. **The AI risk screen can only add protection.** Keywords run first and always win; the screen runs in parallel (no added wait), and any error, timeout or unusable output falls back to the keyword result.
+3. **Measure before claiming.** Every "improvement" was evaluated. A standard stemmer raised keyword ranking by 3 points but dropped off-topic refusal from 90% to 70%, so it was not shipped; the CI gate would have rejected it anyway.
+4. **Fail safe, in layers.** Streaming falls back to a normal request if it can't start; the frontend falls back only when nothing reached the server (so a message is never sent twice); a sleeping server shows "waking up" instead of signing people out.
+5. **No pgvector yet.** At 51 sections, in-process similarity is sub-millisecond and fully testable; pgvector is the documented next step at scale.
+6. **Validation over native schema enforcement, for now.** A wrong provider schema field would fail every extraction in production and couldn't be caught by CI; Pydantic validation with one repair is fully testable today.
 
 ---
 
-## Limitations & honest disclaimers
+## Limitations
 
-- Demo-grade RAG (curated dictionary, not a real retrieval pipeline)
-- SQLite for the demo; would use PostgreSQL in production
-- Bcrypt password hashing (rate-limit login attempts in production — not implemented here)
-- No multi-region deployment, no audit log retention policy, no HIPAA / Australian Privacy Principles (APP) compliance review — this is a portfolio project, not a production healthcare product
-- The agent system prompts are tuned for clarity, not for clinical validation. A real deployment would require review by clinicians and people with lived caregiving experience.
+- **Not a clinician.** Prompts and the knowledge base are written for clarity, not clinically validated; a real deployment would need review by clinicians and people with lived caregiving experience.
+- **Small, author-written eval sets.** They catch regressions and compare models; they can't catch blind spots the author shares.
+- **Indirect crisis language** is harder: the keyword layer catches half of the eval's crisis messages on its own; the AI screen's real-world recall is still to be measured.
+- **Not a compliance-reviewed product:** no HIPAA / Australian Privacy Principles review, audit log retention policy or multi-region deployment.
 
-**CareWise is not a clinician.** In a crisis, call Lifeline on 13 11 14 (AU) or your local emergency number.
+**In a crisis, call 000 (Australia) or your local emergency number. Lifeline: 13 11 14, 24/7.**
 
 ---
 
 ## License
 
-MIT — see `LICENSE`.
+MIT, see `LICENSE`.
 
 ## Author
 
-Built by Gopika as a portfolio project. The motivation for CareWise comes from believing AI is most valuable when it shows up for the people doing invisible labour — and that healthcare-adjacent AI demands a different bar of care than general-purpose chat.
+Built by Gopika. CareWise comes from believing AI is most valuable when it shows up for the people doing invisible labour, and that healthcare-adjacent AI demands a higher bar of care than general-purpose chat.

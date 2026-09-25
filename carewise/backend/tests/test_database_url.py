@@ -36,3 +36,43 @@ def test_describe_database_never_logs_credentials():
     text = describe_database("postgresql+asyncpg://user:s3cret@db.example.com:5432/carewise?ssl=require")
     assert text == "Postgres at db.example.com/carewise"
     assert "s3cret" not in text and "user" not in text
+
+
+def test_pooled_postgres_disables_prepared_statement_caches():
+    from app.core.database import engine_options, normalize_database_url
+
+    neon_pooled = normalize_database_url(
+        "postgresql://u:p@ep-wild-tree-a7f53cl-pooler.ap-southeast-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require")
+    assert engine_options(neon_pooled)["connect_args"] == {"statement_cache_size": 0, "prepared_statement_cache_size": 0}
+    supabase_pooled = normalize_database_url("postgresql://u:p@aws-0-ap-southeast-2.pooler.supabase.com:6543/postgres")
+    assert "connect_args" in engine_options(supabase_pooled)
+    direct = normalize_database_url("postgresql://u:p@ep-wild-tree-a7f53cl.ap-southeast-2.aws.neon.tech/neondb?sslmode=require")
+    assert engine_options(direct) == {"pool_pre_ping": True}
+    assert engine_options("sqlite+aiosqlite:///./carewise.db") == {}
+
+
+async def test_sqlalchemy_takes_its_cache_option_out_before_calling_asyncpg(monkeypatch):
+    """prepared_statement_cache_size belongs to SQLAlchemy's adapter; if it reached asyncpg.connect
+    as an unknown argument, every connection would fail. Check it's removed on the way."""
+    import asyncpg
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from app.core.database import engine_options
+
+    seen = {}
+
+    async def fake_connect(*args, **kwargs):
+        seen.update(kwargs)
+        raise ConnectionRefusedError("stop here: only the arguments matter")
+
+    monkeypatch.setattr(asyncpg, "connect", fake_connect)
+    url = "postgresql+asyncpg://u:p@ep-x-pooler.ap-southeast-2.aws.neon.tech/neondb?ssl=require"
+    engine = create_async_engine(url, **engine_options(url))
+    try:
+        async with engine.connect():
+            pass
+    except Exception:
+        pass
+    finally:
+        await engine.dispose()
+    assert seen.get("statement_cache_size") == 0 and "prepared_statement_cache_size" not in seen

@@ -94,6 +94,16 @@ async def _send_task_reminders() -> None:
     logger.info("Sent %s task reminder(s).", len(tasks))
 
 
+async def _purge_demos() -> None:
+    """Delete demo accounts older than a day, with all their data."""
+    from app.services.demo import purge_expired_demos
+
+    async with SessionLocal() as db:
+        removed = await purge_expired_demos(db)
+    if removed:
+        logger.info("Deleted %d expired demo accounts", removed)
+
+
 def start_scheduler() -> AsyncIOScheduler:
     global _scheduler
     if _scheduler is not None:
@@ -110,6 +120,12 @@ def start_scheduler() -> AsyncIOScheduler:
         _send_task_reminders,
         IntervalTrigger(minutes=1),
         id="task_reminders",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        _purge_demos,
+        IntervalTrigger(hours=1),
+        id="purge_demos",
         replace_existing=True,
     )
     scheduler.start()

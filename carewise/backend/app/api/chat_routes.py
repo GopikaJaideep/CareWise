@@ -21,7 +21,7 @@ from app.core.database import get_db, get_session_factory
 from app.core.safety import redact_pii, validate_response
 from app.core.streaming import ReplySink, open_sink
 from app.core.tracing import start_trace
-from app.services import memory
+from app.services import demo, memory
 from app.models.db import BurnoutCheckin, Conversation, Message, User
 
 logger = logging.getLogger(__name__)
@@ -100,6 +100,12 @@ async def chat_stream(
 
 async def run_chat_turn(payload: ChatRequest, current_user: User, db: AsyncSession) -> ChatResponse:
     """One chat turn: save the message, run the agents, filter and save the reply."""
+    if current_user.is_demo and await demo.demo_messages_used(db, current_user.id) >= demo.DEMO_MESSAGE_LIMIT:
+        raise HTTPException(
+            status_code=429,
+            detail=f"This demo has reached its {demo.DEMO_MESSAGE_LIMIT}-message limit. "
+                   "Create a free account to keep going.",
+        )
     # Get or create conversation
     if payload.conversation_id:
         result = await db.execute(

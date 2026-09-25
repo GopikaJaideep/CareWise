@@ -25,6 +25,8 @@ interface AuthContextValue {
     diagnosis_context?: string;
   }) => Promise<void>;
   logout: () => void;
+  /** Sign in to a fresh, private, pre-filled demo account. */
+  startDemo: () => Promise<void>;
   /** Re-read the signed-in user (e.g. after confirming their email). */
   refreshUser: () => void;
 }
@@ -80,6 +82,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(me);
   }, []);
 
+  const startDemo = useCallback(async () => {
+    const res = await api.startDemo();
+    setToken(res.access_token);
+    setUser(await api.me());
+  }, []);
+
   const register = useCallback(
     async (data: Parameters<AuthContextValue["register"]>[0]) => {
       const res = await api.register(data);
@@ -108,7 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [checkSession]);
 
   return (
-    <AuthContext.Provider value={{ user, loading, unreachable, retry, login, register, logout, refreshUser }}>
+    <AuthContext.Provider value={{ user, loading, unreachable, retry, login, register, logout, refreshUser, startDemo }}>
       {children}
     </AuthContext.Provider>
   );
