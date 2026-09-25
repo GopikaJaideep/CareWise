@@ -16,7 +16,7 @@ CareWise is a full-stack, multi-agent application built to the standard healthca
 
 | | |
 |---|---|
-| **Evals, not vibes** | 215 labelled cases across routing, crisis detection, extraction and retrieval (`backend/evals/`). CI fails the build if crisis detection or retrieval regress below baseline. The runner refuses to publish scores during an API outage instead of reporting it as bad accuracy. |
+| **Evals, not vibes** | 215 labelled cases across routing, crisis detection, extraction and retrieval (`carewise/backend/evals/`). CI fails the build if crisis detection or retrieval regress below baseline. The runner refuses to publish scores during an API outage instead of reporting it as bad accuracy. |
 | **Safety that can't be talked out of it** | Keyword crisis detection runs first and never waits for a model; an AI risk screen runs *in parallel* with routing to catch indirect language and risk to the person being cared for. Either way the crisis reply is fixed, reviewed text, never model-written. |
 | **Grounded answers** | The resource guide answers only from 16 original articles (51 sections) via hybrid BM25 + embedding search, cites what it used, and says "I don't know" when nothing is relevant. Source links are attached by code, so they can't be invented. |
 | **Streaming without skipping the filter** | Replies stream a sentence at a time, and each sentence passes the output safety filter (no doses, diagnoses or cure promises) *before* it's shown. |
@@ -26,7 +26,7 @@ CareWise is a full-stack, multi-agent application built to the standard healthca
 
 ### Measured results
 
-From `python -m evals.run` (see [`backend/evals/README.md`](backend/evals/README.md) for methodology and caveats):
+From `python -m evals.run` (see [`carewise/backend/evals/README.md`](carewise/backend/evals/README.md) for methodology and caveats):
 
 | What | Result |
 |---|---|
@@ -35,7 +35,7 @@ From `python -m evals.run` (see [`backend/evals/README.md`](backend/evals/README
 | Crisis detection, keyword layer alone | 87.5% recall (21/24) at 8.3% false alarms, up from 50%; optimistic, since the new phrases and patterns were added after seeing this set's misses |
 | Routing, extraction, keyword + AI risk screen | pending a full model run |
 
-The retrieval cutoffs were tuned on the same small set they're measured on, so treat the hybrid numbers as optimistic. The eval README spells out what these numbers can and can't tell you.
+The retrieval cutoffs were tuned on the same small set they're measured on, so treat the hybrid numbers as optimistic. The eval README spells out what these numbers can and can't tell you. For the reasoning behind the design in more depth, see [`carewise/docs/ARCHITECTURE.md`](carewise/docs/ARCHITECTURE.md).
 
 ---
 
@@ -76,7 +76,7 @@ flowchart TD
 | Burnout monitor | Wellbeing check-ins and trend | Weighted score with a trend amplifier; out-of-range answers are asked again, not saved |
 | Safety | Crisis content | **No model call**: fixed text with verified numbers, including a version for when the person at risk is the one being cared for |
 
-**Every model output is validated** against a Pydantic schema (`backend/app/agents/outputs.py`) with one repair retry; a failed API call is never retried as a "repair".
+**Every model output is validated** against a Pydantic schema (`carewise/backend/app/agents/outputs.py`) with one repair retry; a failed API call is never retried as a "repair".
 
 ---
 
@@ -94,14 +94,14 @@ flowchart TD
 
 ```bash
 # Backend
-cd backend
+cd carewise/backend
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 cp ../.env.example .env        # add GEMINI_API_KEY (free) or ANTHROPIC_API_KEY
 uvicorn app.main:app --reload
 
 # Frontend, in another terminal
-cd frontend
+cd carewise/frontend
 npm install
 npm run dev                    # http://localhost:5173, proxies /api to :8000
 ```
@@ -111,13 +111,13 @@ Without an API key, CareWise runs in demo mode: routing uses deterministic rules
 ### Docker Compose
 
 ```bash
-cp .env.example .env && docker compose up --build   # http://localhost:8080
+cd carewise && cp .env.example .env && docker compose up --build   # http://localhost:8080
 ```
 
 ### Tests and evals
 
 ```bash
-cd backend
+cd carewise/backend
 python -m pytest -q                      # 270 tests
 python -m evals.run --suite crisis,retrieval   # offline suites, no key needed
 python -m evals.run --delay 4            # all suites, with a model key
@@ -140,7 +140,7 @@ A direct (unpooled) connection string is best. A pooled one (Neon's `-pooler` ho
 
 Also set a fixed `SECRET_KEY`, or everyone is signed out whenever it changes. Check a deploy at **`/health`**: `"persistent": true` means Postgres; `false` means data will be lost on the next deploy.
 
-Migrations (Alembic) run automatically at startup. After changing a model, generate one with `alembic revision --autogenerate -m "..."` from `backend/`, and review it: a test renders every migration as Postgres SQL, because autogenerate writes SQLite spellings (like a boolean default of `'0'`) that Postgres rejects.
+Migrations (Alembic) run automatically at startup. After changing a model, generate one with `alembic revision --autogenerate -m "..."` from `carewise/backend/`, and review it: a test renders every migration as Postgres SQL, because autogenerate writes SQLite spellings (like a boolean default of `'0'`) that Postgres rejects.
 
 ### Connecting the frontend
 
@@ -160,19 +160,19 @@ Migrations (Alembic) run automatically at startup. After changing a model, gener
 
 ### The resource guide
 
-It answers only from original plain-language articles in `backend/app/knowledge/`, each linked to its source (Cancer Council, Carer Gateway, Services Australia, ACS, Palliative Care Australia). Search is hybrid: BM25 always runs; with `GEMINI_API_KEY` set, Gemini embeddings add semantic search, merged by reciprocal-rank fusion behind a relevance cutoff. Section vectors are cached in the database and built by a background warm-up at startup, never inside a person's request.
+It answers only from original plain-language articles in `carewise/backend/app/knowledge/`, each linked to its source (Cancer Council, Carer Gateway, Services Australia, ACS, Palliative Care Australia). Search is hybrid: BM25 always runs; with `GEMINI_API_KEY` set, Gemini embeddings add semantic search, merged by reciprocal-rank fusion behind a relevance cutoff. Section vectors are cached in the database and built by a background warm-up at startup, never inside a person's request.
 
 Similarity is computed in Python: across ~50 sections that takes well under a millisecond. At thousands of sections, the next step is pgvector (an indexed `vector` column and `ORDER BY embedding <=> :query`), which Neon, Supabase and Render Postgres all support.
 
-To add an article, drop a Markdown file in `backend/app/knowledge/` (header lines `title:`, `source:`, `url:`, `region:`, then `## ` sections) and add questions for it to `backend/evals/datasets/retrieval.jsonl`.
+To add an article, drop a Markdown file in `carewise/backend/app/knowledge/` (header lines `title:`, `source:`, `url:`, `region:`, then `## ` sections) and add questions for it to `carewise/backend/evals/datasets/retrieval.jsonl`.
 
 ### Memory between chats (opt-in)
 
-CareWise can remember durable facts between chats (a treatment schedule, the care team, what helps) so people don't repeat themselves. It is **off until turned on** on the Home page, where every fact is listed and deletable; turning it off forgets everything. A background task updates memory every few messages, after the reply is sent. Contact details, ID numbers and anything about suicide, self-harm or a crisis are never stored: enforced in code (`backend/app/services/memory.py`), and turns that reached the safety response are skipped.
+CareWise can remember durable facts between chats (a treatment schedule, the care team, what helps) so people don't repeat themselves. It is **off until turned on** on the Home page, where every fact is listed and deletable; turning it off forgets everything. A background task updates memory every few messages, after the reply is sent. Contact details, ID numbers and anything about suicide, self-harm or a crisis are never stored: enforced in code (`carewise/backend/app/services/memory.py`), and turns that reached the safety response are skipped.
 
 ### Carrie and voice
 
-Carrie is drawn in SVG (`frontend/src/components/Buddy.tsx`) with seven moods: idle, listening (while you type or speak), thinking, talking (while a reply streams or is read aloud), caring (after support, a symptom or a check-in), glad (after something practical) and steady (after a crisis reply: calm, open eyes, no movement except blinking). Animations are slow and stop under "reduce motion". "Hide Carrie" in the chat bar turns him off, remembered per browser.
+Carrie is drawn in SVG (`carewise/frontend/src/components/Buddy.tsx`) with seven moods: idle, listening (while you type or speak), thinking, talking (while a reply streams or is read aloud), caring (after support, a symptom or a check-in), glad (after something practical) and steady (after a crisis reply: calm, open eyes, no movement except blinking). Animations are slow and stop under "reduce motion". "Hide Carrie" in the chat bar turns him off, remembered per browser.
 
 **Speaking a message:** the mic button writes what you say into the message box as you talk; nothing is sent until you press Send, because a misheard word could change a symptom or a date. **Hearing replies:** off until turned on; a light, childlike voice (crisis replies are read in a calm, normal voice), with a Listen button under every reply. Both use the browser's Web Speech API. Read-aloud runs on the device; speech-to-text in Chrome and Edge uses Google's or Microsoft's online service, which the app says while recording. Where a browser doesn't support it (e.g. Firefox for voice input), the button is hidden.
 
@@ -229,7 +229,7 @@ Full OpenAPI schema at `/docs` when running.
 
 ## License
 
-MIT, see `LICENSE`.
+MIT, see [LICENSE](carewise/LICENSE).
 
 ## Author
 
