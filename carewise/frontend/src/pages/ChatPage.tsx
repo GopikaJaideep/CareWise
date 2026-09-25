@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Send, Loader2, Sparkles, MessageCircle, History, Plus, Volume2, VolumeX } from "lucide-react";
+import { Send, Loader2, Sparkles, MessageCircle, History, Plus, Volume2, VolumeX, Mic, Square } from "lucide-react";
 import {
   api, APIError, StreamUnavailable, type AgentTrace, type ChatResponse, type ConversationSummary, type MessageOut,
   type TurnTrace,
@@ -10,6 +10,7 @@ import { BUDDY_NAME, Buddy, moodForReply, useBuddyEnabled, type BuddyMood } from
 import { useAuth } from "../lib/auth";
 import { usePageTitle } from "../lib/usePageTitle";
 import { usePreference } from "../lib/preference";
+import { dictationSupported, useDictation } from "../lib/dictation";
 import { speakAsCarrie, stopSpeaking, useCarrieSpeaking, voiceSupported } from "../lib/voice";
 
 interface DisplayMessage {
@@ -81,6 +82,7 @@ export function ChatPage() {
   const [voicePref, setVoicePref] = usePreference("carewise.voice", false);
   const voiceOn = voiceSupported && buddyOn && voicePref;
   const speaking = useCarrieSpeaking();
+  const dictation = useDictation(input, setInput);
 
   // Stop reading aloud when leaving the chat.
   useEffect(() => stopSpeaking, []);
@@ -165,6 +167,7 @@ export function ChatPage() {
     if (!text.trim() || loading) return;
     setError(null);
     stopSpeaking();
+    dictation.cancel(); // what they said is already in `text`; don't let late words refill the box
 
     const userMsg: DisplayMessage = {
       id: `temp-${Date.now()}`,
@@ -236,7 +239,7 @@ export function ChatPage() {
       ? "thinking"
       : replyMood === "steady"
         ? "steady"
-        : input.trim()
+        : input.trim() || dictation.recording
           ? "listening"
           : replyMood;
 
@@ -400,6 +403,7 @@ export function ChatPage() {
               value={input}
               onChange={(e) => {
                 if (speaking) stopSpeaking(); // they've started to reply
+                if (dictation.recording) dictation.stop(); // typing takes over from the mic
                 setInput(e.target.value);
               }}
               onKeyDown={(e) => {
@@ -408,10 +412,33 @@ export function ChatPage() {
                   send(input);
                 }
               }}
-              placeholder="Tell me what's going on…"
+              placeholder={dictation.recording ? "Listening… speak now" : "Tell me what's going on…"}
               disabled={loading}
               className="flex-1 resize-none bg-transparent px-3 py-2 text-ink-900 placeholder-ink-500 focus:outline-none disabled:opacity-50"
             />
+            {dictationSupported && (
+              <button
+                onClick={() => {
+                  if (dictation.recording) {
+                    dictation.stop();
+                  } else {
+                    stopSpeaking(); // so the mic doesn't hear Carrie
+                    dictation.start();
+                  }
+                }}
+                disabled={loading}
+                aria-pressed={dictation.recording}
+                aria-label={dictation.recording ? "Stop recording" : "Speak your message"}
+                title={dictation.recording ? "Stop recording" : "Speak your message"}
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors disabled:pointer-events-none disabled:opacity-40 ${
+                  dictation.recording
+                    ? "bg-clay-400 text-white animate-pulse-soft"
+                    : "text-ink-600 hover:bg-sand-100 hover:text-ink-900"
+                }`}
+              >
+                {dictation.recording ? <Square className="h-3.5 w-3.5 fill-current" aria-hidden="true" /> : <Mic className="h-4 w-4" aria-hidden="true" />}
+              </button>
+            )}
             <button
               onClick={() => send(input)}
               disabled={!input.trim() || loading}
@@ -425,6 +452,14 @@ export function ChatPage() {
               )}
             </button>
           </div>
+          {dictation.error ? (
+            <p role="alert" className="mt-2 text-center text-xs text-clay-500">{dictation.error}</p>
+          ) : dictation.recording ? (
+            <p role="status" className="mt-2 text-center text-xs text-ink-600">
+              Listening. Check the words, then send. Your browser turns speech into text (in Chrome and
+              Edge, using Google's or Microsoft's online service).
+            </p>
+          ) : null}
           <p className="mt-2 text-center text-xs text-ink-600">
             Not medical advice. In an emergency call{" "}
             <a href="tel:000" className="underline">000</a>, or Lifeline on{" "}
