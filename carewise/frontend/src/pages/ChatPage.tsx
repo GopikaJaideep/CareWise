@@ -6,6 +6,7 @@ import {
   type TurnTrace,
 } from "../lib/api";
 import { AgentBadge } from "../components/AgentBadge";
+import { BUDDY_NAME, Buddy, moodForReply, useBuddyEnabled, type BuddyMood } from "../components/Buddy";
 import { useAuth } from "../lib/auth";
 import { usePageTitle } from "../lib/usePageTitle";
 
@@ -215,6 +216,20 @@ export function ChatPage() {
 
   const isEmpty = messages.length === 0 && !historyLoading;
 
+  const [buddyOn, setBuddyOn] = useBuddyEnabled();
+  const lastReply = [...messages].reverse().find((m) => m.role === "assistant" && !m.streaming);
+  const replyMood = moodForReply(lastReply?.agents);
+  // After a crisis reply Carrie stays steady, even while the person types.
+  const buddyMood: BuddyMood = messages.some((m) => m.streaming)
+    ? "talking"
+    : loading
+      ? "thinking"
+      : replyMood === "steady"
+        ? "steady"
+        : input.trim()
+          ? "listening"
+          : replyMood;
+
   const errorBanner = error && (
     <div role="alert" className="mt-4 rounded-lg border border-clay-200 bg-clay-50 p-3 text-sm text-clay-500">
       {error}
@@ -233,10 +248,15 @@ export function ChatPage() {
             <History className="h-3.5 w-3.5" aria-hidden="true" />
             Past chats{conversations.length > 0 ? ` (${conversations.length})` : ""}
           </button>
-          <button onClick={startNewChat} className="btn-ghost text-xs">
-            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-            New chat
-          </button>
+          <div className="flex items-center gap-1">
+            <button onClick={() => setBuddyOn(!buddyOn)} aria-pressed={buddyOn} className="btn-ghost text-xs">
+              {buddyOn ? `Hide ${BUDDY_NAME}` : `Show ${BUDDY_NAME}`}
+            </button>
+            <button onClick={startNewChat} className="btn-ghost text-xs">
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+              New chat
+            </button>
+          </div>
         </div>
         {historyOpen && (
           <div className="mx-auto max-w-3xl animate-fade-in px-4 pb-3 md:px-6">
@@ -279,13 +299,18 @@ export function ChatPage() {
 
           {isEmpty && (
             <div className="flex flex-col items-center justify-center py-10 text-center animate-fade-in sm:py-16">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-sage-50 text-sage-600">
-                <MessageCircle className="h-6 w-6" aria-hidden="true" />
-              </div>
+              {buddyOn ? (
+                <Buddy mood={input.trim() ? "listening" : "idle"} size={104} />
+              ) : (
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-sage-50 text-sage-600">
+                  <MessageCircle className="h-6 w-6" aria-hidden="true" />
+                </div>
+              )}
               <h1 className="mt-6 font-serif text-3xl font-semibold tracking-tight text-ink-900">
                 Hello{user?.display_name ? `, ${user.display_name}` : ""}.
               </h1>
               <p className="mt-3 max-w-md text-ink-600">
+                {buddyOn ? `I'm ${BUDDY_NAME}, and I'm here to help carry the load. ` : ""}
                 What's on your mind? Vent, log a symptom, add an appointment, or ask a question.
               </p>
 
@@ -306,15 +331,19 @@ export function ChatPage() {
           )}
 
           {messages.map((m, i) => (
-            <MessageBubble key={m.id} message={m} prevRole={messages[i - 1]?.role} />
+            <MessageBubble key={m.id} message={m} prevRole={messages[i - 1]?.role} buddy={buddyOn} />
           ))}
 
           {loading && !messages.some((m) => m.streaming) && (
             <div role="status" className="mt-6 flex items-start gap-3 animate-fade-in">
               <span className="sr-only">CareWise is replying…</span>
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sage-100 text-sage-700">
-                <Sparkles className="h-3.5 w-3.5" />
-              </div>
+              {buddyOn ? (
+                <Buddy mood="thinking" size={32} still />
+              ) : (
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sage-100 text-sage-700">
+                  <Sparkles className="h-3.5 w-3.5" />
+                </div>
+              )}
               <div className="flex items-center gap-1 pt-2">
                 <span className="h-2 w-2 rounded-full bg-ink-500/40 animate-pulse" />
                 <span className="h-2 w-2 rounded-full bg-ink-500/40 animate-pulse" style={{ animationDelay: "150ms" }} />
@@ -329,7 +358,10 @@ export function ChatPage() {
 
       {/* Composer */}
       <div className="border-t border-sand-200 bg-white/70 backdrop-blur-sm">
-        <div className="mx-auto max-w-3xl px-4 py-4 md:px-6">
+        <div className="mx-auto flex max-w-3xl items-end gap-2 px-4 py-4 md:px-6">
+          {/* Carrie sits by the message box and reacts: listening, thinking, talking, then the reply's mood. */}
+          {buddyOn && !isEmpty && <Buddy mood={buddyMood} size={44} className="mb-0.5 hidden sm:block" />}
+          <div className="min-w-0 flex-1">
           <div className="flex items-end gap-3 rounded-2xl border border-sand-200 bg-white p-2 shadow-soft focus-within:border-sage-300 focus-within:ring-2 focus-within:ring-sage-100">
             <label htmlFor="chat-input" className="sr-only">
               Message CareWise
@@ -368,6 +400,7 @@ export function ChatPage() {
             <a href="tel:000" className="underline">000</a>, or Lifeline on{" "}
             <a href="tel:131114" className="underline">13 11 14</a>.
           </p>
+          </div>
         </div>
       </div>
     </div>
@@ -386,9 +419,11 @@ function formatWhen(iso: string): string {
 function MessageBubble({
   message,
   prevRole,
+  buddy,
 }: {
   message: DisplayMessage;
   prevRole?: string;
+  buddy: boolean;
 }) {
   const isUser = message.role === "user";
   const isCrisis = message.agents?.includes("safety");
@@ -406,11 +441,16 @@ function MessageBubble({
 
   return (
     <div className={`flex items-start gap-3 ${showSpacing ? "mt-6" : "mt-4"} animate-slide-up`}>
-      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
-        isCrisis ? "bg-red-50 text-red-700" : "bg-sage-100 text-sage-700"
-      }`}>
-        <Sparkles className="h-3.5 w-3.5" />
-      </div>
+      {buddy ? (
+        // A still portrait beside each reply; only the one by the message box moves.
+        <Buddy mood={isCrisis ? "steady" : "idle"} size={32} still />
+      ) : (
+        <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
+          isCrisis ? "bg-red-50 text-red-700" : "bg-sage-100 text-sage-700"
+        }`}>
+          <Sparkles className="h-3.5 w-3.5" />
+        </div>
+      )}
       <div className="flex-1 max-w-[85%]">
         {message.agents && message.agents.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-1.5">
