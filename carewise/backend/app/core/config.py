@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     resend_api_key: str = ""
     resend_from_email: str = "CareWise <onboarding@resend.dev>"
     frontend_url: str = "http://localhost:5173"
+    # Sign-up checks the email's domain exists and accepts mail (a DNS lookup). Tests turn it off.
+    email_check_deliverability: bool = True
+    verify_email_expire_hours: int = 48
     reset_token_expire_minutes: int = 30
 
     # Push notifications (Web Push / VAPID)

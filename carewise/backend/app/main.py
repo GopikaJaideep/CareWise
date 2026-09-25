@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import auth_routes, chat_routes, memory_routes, tracking_routes
 from app.core.config import get_settings
-from app.core.database import init_db
+from app.core.database import IS_SQLITE, init_db
 from app.services.retrieval import get_retriever
 from app.services.scheduler import start_scheduler, stop_scheduler
 
@@ -67,4 +67,13 @@ async def root():
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy"}
+    """Also says where data lives, so a deploy can be checked from a browser. Never credentials.
+
+    "persistent": false means a SQLite file on the server: on hosts that reset the disk on each
+    deploy (Render's default), every account is lost on redeploy. Set DATABASE_URL to Postgres.
+    """
+    return {
+        "status": "healthy",
+        "database": "sqlite" if IS_SQLITE else "postgres",
+        "persistent": not IS_SQLITE,
+    }

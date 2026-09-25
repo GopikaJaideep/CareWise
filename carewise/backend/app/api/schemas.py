@@ -24,6 +24,10 @@ UTCDateTime = Annotated[datetime, PlainSerializer(_as_utc_iso, return_type=str)]
 
 
 # --- Auth ---
+class VerifyEmailRequest(BaseModel):
+    token: str
+
+
 class UserRegister(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8)
@@ -61,6 +65,7 @@ class UserOut(BaseModel):
     care_recipient_name: str | None
     care_recipient_relation: str | None
     diagnosis_context: str | None
+    email_verified: bool = False
 
     class Config:
         from_attributes = True

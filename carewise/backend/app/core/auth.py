@@ -30,8 +30,30 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 def create_access_token(user_id: int) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
-    payload = {"sub": str(user_id), "exp": expire}
+    payload = {"sub": str(user_id), "exp": expire, "purpose": "access"}
     return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
+
+
+def create_email_verification_token(user_id: int, email: str) -> str:
+    """Signed link token for confirming an email address. Tied to the address, so changing the
+    email invalidates it, and marked with its purpose so it can't be used to log in."""
+    expire = datetime.now(timezone.utc) + timedelta(hours=settings.verify_email_expire_hours)
+    payload = {"sub": str(user_id), "email": email.lower(), "exp": expire, "purpose": "verify_email"}
+    return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
+
+
+def read_email_verification_token(token: str) -> tuple[int, str] | None:
+    """(user id, email) if the token is a valid, unexpired confirmation token; else None."""
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+    except JWTError:
+        return None
+    if payload.get("purpose") != "verify_email":
+        return None
+    try:
+        return int(payload["sub"]), str(payload["email"])
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 async def get_current_user(
@@ -47,6 +69,9 @@ async def get_current_user(
         raise creds_error
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+        # Only access tokens log in (tokens issued before purposes existed have none: still fine).
+        if payload.get("purpose", "access") != "access":
+            raise creds_error
         user_id = int(payload.get("sub", 0))
         if not user_id:
             raise creds_error

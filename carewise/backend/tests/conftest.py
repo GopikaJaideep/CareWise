@@ -2,6 +2,10 @@ import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.models.db import Base, User
+from app.core.config import get_settings
+
+# No DNS lookups in tests: sign-up's email deliverability check is tested with it switched back on.
+get_settings().email_check_deliverability = False
 
 
 @pytest.fixture
