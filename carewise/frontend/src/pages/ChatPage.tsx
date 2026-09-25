@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Send, Loader2, Sparkles, MessageCircle, History, Plus } from "lucide-react";
+import { Send, Loader2, Sparkles, MessageCircle, History, Plus, Volume2, VolumeX, Mic, Square } from "lucide-react";
 import {
   api, APIError, StreamUnavailable, type AgentTrace, type ChatResponse, type ConversationSummary, type MessageOut,
   type TurnTrace,
@@ -9,6 +9,9 @@ import { AgentBadge } from "../components/AgentBadge";
 import { BUDDY_NAME, Buddy, moodForReply, useBuddyEnabled, type BuddyMood } from "../components/Buddy";
 import { useAuth } from "../lib/auth";
 import { usePageTitle } from "../lib/usePageTitle";
+import { usePreference } from "../lib/preference";
+import { dictationSupported, useDictation } from "../lib/dictation";
+import { speakAsCarrie, stopSpeaking, useCarrieSpeaking, voiceSupported } from "../lib/voice";
 
 interface DisplayMessage {
   id: string | number;
@@ -75,6 +78,14 @@ export function ChatPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const refocusComposerRef = useRef(false);
+  const [buddyOn, setBuddyOn] = useBuddyEnabled();
+  const [voicePref, setVoicePref] = usePreference("carewise.voice", false);
+  const voiceOn = voiceSupported && buddyOn && voicePref;
+  const speaking = useCarrieSpeaking();
+  const dictation = useDictation(input, setInput);
+
+  // Stop reading aloud when leaving the chat.
+  useEffect(() => stopSpeaking, []);
 
   const openConversation = async (id: number) => {
     setError(null);
@@ -155,6 +166,8 @@ export function ChatPage() {
   const send = async (text: string) => {
     if (!text.trim() || loading) return;
     setError(null);
+    stopSpeaking();
+    dictation.cancel(); // what they said is already in `text`; don't let late words refill the box
 
     const userMsg: DisplayMessage = {
       id: `temp-${Date.now()}`,
@@ -202,6 +215,7 @@ export function ChatPage() {
         timestamp: new Date(),
       };
       setMessages((m) => [...m.filter((msg) => msg.id !== previewId), assistantMsg]);
+      if (voiceOn) speakAsCarrie(res.content, { calm: moodForReply(assistantMsg.agents) === "steady" });
     } catch (err) {
       // Take the unsent message back out of the thread and return it to the composer, so nothing
       // the person typed is lost and it's clear it wasn't delivered.
@@ -216,17 +230,16 @@ export function ChatPage() {
 
   const isEmpty = messages.length === 0 && !historyLoading;
 
-  const [buddyOn, setBuddyOn] = useBuddyEnabled();
   const lastReply = [...messages].reverse().find((m) => m.role === "assistant" && !m.streaming);
   const replyMood = moodForReply(lastReply?.agents);
   // After a crisis reply Carrie stays steady, even while the person types.
-  const buddyMood: BuddyMood = messages.some((m) => m.streaming)
+  const buddyMood: BuddyMood = messages.some((m) => m.streaming) || (speaking && replyMood !== "steady")
     ? "talking"
     : loading
       ? "thinking"
       : replyMood === "steady"
         ? "steady"
-        : input.trim()
+        : input.trim() || dictation.recording
           ? "listening"
           : replyMood;
 
@@ -249,7 +262,24 @@ export function ChatPage() {
             Past chats{conversations.length > 0 ? ` (${conversations.length})` : ""}
           </button>
           <div className="flex items-center gap-1">
-            <button onClick={() => setBuddyOn(!buddyOn)} aria-pressed={buddyOn} className="btn-ghost text-xs">
+            {voiceSupported && buddyOn && (
+              <button
+                onClick={() => {
+                  const on = !voicePref;
+                  setVoicePref(on);
+                  if (on) speakAsCarrie(`Hi, I'm ${BUDDY_NAME}. I'll read my replies to you.`);
+                  else stopSpeaking();
+                }}
+                aria-pressed={voicePref}
+                aria-label={voicePref ? `Turn off ${BUDDY_NAME}'s voice` : `Turn on ${BUDDY_NAME}'s voice`}
+                title={voicePref ? `${BUDDY_NAME} reads replies aloud` : `Hear ${BUDDY_NAME} read replies aloud`}
+                className="btn-ghost text-xs"
+              >
+                {voicePref ? <Volume2 className="h-3.5 w-3.5" aria-hidden="true" /> : <VolumeX className="h-3.5 w-3.5" aria-hidden="true" />}
+                <span className="hidden sm:inline">Voice {voicePref ? "on" : "off"}</span>
+              </button>
+            )}
+            <button onClick={() => { if (buddyOn) stopSpeaking(); setBuddyOn(!buddyOn); }} aria-pressed={buddyOn} className="btn-ghost text-xs">
               {buddyOn ? `Hide ${BUDDY_NAME}` : `Show ${BUDDY_NAME}`}
             </button>
             <button onClick={startNewChat} className="btn-ghost text-xs">
@@ -371,17 +401,44 @@ export function ChatPage() {
               ref={textareaRef}
               rows={1}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                if (speaking) stopSpeaking(); // they've started to reply
+                if (dictation.recording) dictation.stop(); // typing takes over from the mic
+                setInput(e.target.value);
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
                   send(input);
                 }
               }}
-              placeholder="Tell me what's going on…"
+              placeholder={dictation.recording ? "Listening… speak now" : "Tell me what's going on…"}
               disabled={loading}
               className="flex-1 resize-none bg-transparent px-3 py-2 text-ink-900 placeholder-ink-500 focus:outline-none disabled:opacity-50"
             />
+            {dictationSupported && (
+              <button
+                onClick={() => {
+                  if (dictation.recording) {
+                    dictation.stop();
+                  } else {
+                    stopSpeaking(); // so the mic doesn't hear Carrie
+                    dictation.start();
+                  }
+                }}
+                disabled={loading}
+                aria-pressed={dictation.recording}
+                aria-label={dictation.recording ? "Stop recording" : "Speak your message"}
+                title={dictation.recording ? "Stop recording" : "Speak your message"}
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors disabled:pointer-events-none disabled:opacity-40 ${
+                  dictation.recording
+                    ? "bg-clay-400 text-white animate-pulse-soft"
+                    : "text-ink-600 hover:bg-sand-100 hover:text-ink-900"
+                }`}
+              >
+                {dictation.recording ? <Square className="h-3.5 w-3.5 fill-current" aria-hidden="true" /> : <Mic className="h-4 w-4" aria-hidden="true" />}
+              </button>
+            )}
             <button
               onClick={() => send(input)}
               disabled={!input.trim() || loading}
@@ -395,6 +452,14 @@ export function ChatPage() {
               )}
             </button>
           </div>
+          {dictation.error ? (
+            <p role="alert" className="mt-2 text-center text-xs text-clay-500">{dictation.error}</p>
+          ) : dictation.recording ? (
+            <p role="status" className="mt-2 text-center text-xs text-ink-600">
+              Listening. Check the words, then send. Your browser turns speech into text (in Chrome and
+              Edge, using Google's or Microsoft's online service).
+            </p>
+          ) : null}
           <p className="mt-2 text-center text-xs text-ink-600">
             Not medical advice. In an emergency call{" "}
             <a href="tel:000" className="underline">000</a>, or Lifeline on{" "}
@@ -473,7 +538,18 @@ function MessageBubble({
             )}
           </p>
         </div>
-        {message.turn && <TurnDetails turn={message.turn} />}
+        <div className="flex flex-wrap items-center gap-x-3">
+          {buddy && voiceSupported && !message.streaming && (
+            <button
+              onClick={() => speakAsCarrie(message.content, { calm: isCrisis })}
+              className="mt-1.5 inline-flex items-center gap-1 rounded px-1 py-0.5 text-xs text-ink-600 hover:text-ink-900"
+            >
+              <Volume2 className="h-3 w-3" aria-hidden="true" />
+              Listen
+            </button>
+          )}
+          {message.turn && <TurnDetails turn={message.turn} />}
+        </div>
       </div>
     </div>
   );
