@@ -1,6 +1,7 @@
-import { type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import { Heart, MessageCircle, LayoutDashboard, Calendar, Activity, LogOut, BookOpen, Phone, Wind } from "lucide-react";
+import { Heart, MessageCircle, LayoutDashboard, Calendar, Activity, LogOut, BookOpen, Phone, Wind, MailCheck } from "lucide-react";
+import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 
 const NAV = [
@@ -129,6 +130,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </header>
 
+        {user && !user.email_verified && <ConfirmEmailBanner email={user.email} />}
+
         <main id="main" tabIndex={-1} className="relative min-h-0 flex-1 overflow-hidden focus:outline-none">
           {children}
         </main>
@@ -155,6 +158,40 @@ export function AppShell({ children }: { children: ReactNode }) {
           ))}
         </nav>
       </div>
+    </div>
+  );
+}
+
+
+/** Until the address is confirmed: a gentle reminder, not a block. */
+function ConfirmEmailBanner({ email }: { email: string }) {
+  const [state, setState] = useState<"idle" | "sending" | "sent" | "failed">("idle");
+
+  const resend = async () => {
+    setState("sending");
+    try {
+      await api.resendVerification();
+      setState("sent");
+    } catch {
+      setState("failed");
+    }
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-sand-200 bg-sand-100 px-4 py-2 text-sm text-ink-800">
+      <MailCheck className="h-4 w-4 shrink-0 text-sage-600" aria-hidden="true" />
+      <span className="min-w-0 flex-1">
+        Please confirm your email: we sent a link to <strong className="font-medium">{email}</strong>.
+      </span>
+      <span role="status" className="text-ink-600">
+        {state === "sent" && "Sent. Check your inbox and spam folder."}
+        {state === "failed" && "Couldn't send it. Please try again."}
+      </span>
+      {state !== "sent" && (
+        <button onClick={resend} disabled={state === "sending"} className="font-medium text-sage-700 underline underline-offset-2">
+          {state === "sending" ? "Sending…" : "Resend the link"}
+        </button>
+      )}
     </div>
   );
 }

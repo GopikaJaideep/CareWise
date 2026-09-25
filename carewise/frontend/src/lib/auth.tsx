@@ -25,6 +25,8 @@ interface AuthContextValue {
     diagnosis_context?: string;
   }) => Promise<void>;
   logout: () => void;
+  /** Re-read the signed-in user (e.g. after confirming their email). */
+  refreshUser: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -88,6 +90,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     []
   );
 
+  const refreshUser = useCallback(() => {
+    if (!localStorage.getItem("carewise_token")) return;
+    api.me().then(setUser).catch(() => undefined);
+  }, []);
+
   const logout = useCallback(() => {
     window.clearTimeout(retryTimer.current);
     setToken(null);
@@ -101,7 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [checkSession]);
 
   return (
-    <AuthContext.Provider value={{ user, loading, unreachable, retry, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, unreachable, retry, login, register, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

@@ -72,3 +72,27 @@ async def test_running_on_every_startup_is_harmless(tmp_path):
 
 def test_baseline_revision_exists():
     assert ScriptDirectory.from_config(alembic_config()).get_revision(BASELINE_REVISION) is not None
+
+
+def test_migrations_render_valid_postgres_sql(monkeypatch):
+    """Production runs Postgres; tests and development run SQLite. Autogenerate writes SQLite
+    spellings (a boolean default of text('0')), which Postgres rejects, and that would crash a
+    deploy at startup. Render every migration as Postgres SQL, offline, and check it."""
+    import io
+
+    from alembic import command
+
+    from app.core import database
+
+    monkeypatch.setattr(database, "DATABASE_URL", "postgresql+asyncpg://u:p@localhost/carewise")
+    buffer = io.StringIO()
+    cfg = alembic_config()
+    cfg.output_buffer = buffer
+    command.upgrade(cfg, "head", sql=True)
+    sql = buffer.getvalue()
+
+    assert sql.count("CREATE TABLE") >= len(Base.metadata.tables)
+    # Every added boolean column has a boolean default, never an integer.
+    for line in sql.splitlines():
+        if "BOOLEAN" in line and "DEFAULT" in line:
+            assert "DEFAULT false" in line or "DEFAULT true" in line, line

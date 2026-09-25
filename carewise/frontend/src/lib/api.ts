@@ -68,6 +68,7 @@ export interface User {
   care_recipient_name: string | null;
   care_recipient_relation: string | null;
   diagnosis_context: string | null;
+  email_verified: boolean;
 }
 
 export interface TokenResponse {
@@ -225,6 +226,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ email }),
     }),
+
+  verifyEmail: (token: string) =>
+    request<User>("/auth/verify-email", { method: "POST", body: JSON.stringify({ token }) }),
+
+  resendVerification: () => request<{ status: string }>("/auth/resend-verification", { method: "POST" }),
 
   resetPassword: (token: string, new_password: string) =>
     request<void>("/auth/reset-password", {
