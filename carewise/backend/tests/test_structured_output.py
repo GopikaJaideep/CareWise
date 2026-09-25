@@ -156,9 +156,27 @@ async def test_a_shortcut_word_cannot_swallow_a_second_request():
     assert orch.llm.routed == 1
 
 
-async def test_single_sentence_shortcut_still_skips_the_model():
+@pytest.mark.parametrize("message", [
+    # Found by a live end-to-end test: one sentence, two requests. The "remind me" shortcut sent it
+    # all to the care coordinator, so the nausea was never logged.
+    "Mum had nausea this morning, around a 6, and remind me she has chemo on Tuesday at 10.",
+    "Pain was a 7 today; also add a pharmacy run for Friday",
+    "Log her fatigue as a 5 then remind me to call the nurse",
+])
+async def test_a_request_joined_on_in_the_same_sentence_goes_to_the_router(message):
+    orch = orchestrator({"intents": [{"agent": "symptom_tracker", "text": "a"}, {"agent": "care_coordinator", "text": "b"}]})
+    await orch.run(ctx(message))
+    assert orch.llm.routed == 1
+
+
+@pytest.mark.parametrize("message", [
+    "Remind me chemo is Tuesday at 10",
+    "Remind me to call the nurse and the pharmacy tomorrow",  # "and" joins two things to remember, not two requests
+    "Add task: pick up scripts",
+])
+async def test_single_sentence_shortcut_still_skips_the_model(message):
     orch = orchestrator({"intents": [{"agent": "symptom_tracker"}]})
-    responses = await orch.run(ctx("Remind me chemo is Tuesday at 10"))
+    responses = await orch.run(ctx(message))
     assert [r.agent for r in responses] == [AgentName.CARE_COORDINATOR] and orch.llm.routed == 0
 
 
