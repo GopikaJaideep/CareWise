@@ -67,7 +67,9 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins_list(self) -> list[str]:
-        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+        # Browsers send the origin with no trailing slash, and CORS needs an exact match, so a URL
+        # pasted from the address bar ("https://site.vercel.app/") would silently block every request.
+        return [o.strip().rstrip("/") for o in self.cors_origins.split(",") if o.strip().rstrip("/")]
 
     @property
     def crisis_keywords_list(self) -> list[str]:

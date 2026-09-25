@@ -76,3 +76,12 @@ async def test_sqlalchemy_takes_its_cache_option_out_before_calling_asyncpg(monk
     finally:
         await engine.dispose()
     assert seen.get("statement_cache_size") == 0 and "prepared_statement_cache_size" not in seen
+
+
+def test_cors_origins_ignore_a_trailing_slash_and_spaces():
+    # Found live: "https://carewise-aibuddy.vercel.app/" in CORS_ORIGINS blocked every sign-up,
+    # because browsers send the origin without the slash.
+    from app.core.config import Settings
+
+    s = Settings(cors_origins=" https://carewise-aibuddy.vercel.app/ ,http://localhost:5173,, ")
+    assert s.cors_origins_list == ["https://carewise-aibuddy.vercel.app", "http://localhost:5173"]
