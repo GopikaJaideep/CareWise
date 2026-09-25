@@ -32,6 +32,8 @@ class User(Base):
     memory_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     # Set once the person opens the confirmation link emailed at sign-up.
     email_verified: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    # One-click demo account (app/services/demo.py): deleted after a day, message-capped.
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     conversations: Mapped[list["Conversation"]] = relationship(back_populates="user", cascade="all, delete-orphan")

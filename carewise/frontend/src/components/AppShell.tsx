@@ -130,7 +130,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         </header>
 
-        {user && !user.email_verified && <ConfirmEmailBanner email={user.email} />}
+        {user?.is_demo ? (
+          <DemoBanner onCreateAccount={() => { logout(); navigate("/register"); }} />
+        ) : (
+          user && !user.email_verified && <ConfirmEmailBanner email={user.email} />
+        )}
 
         <main id="main" tabIndex={-1} className="relative min-h-0 flex-1 overflow-hidden focus:outline-none">
           {children}
@@ -192,6 +196,21 @@ function ConfirmEmailBanner({ email }: { email: string }) {
           {state === "sending" ? "Sending…" : "Resend the link"}
         </button>
       )}
+    </div>
+  );
+}
+
+
+/** A private demo account: say so plainly, and offer a way to keep going for real. */
+function DemoBanner({ onCreateAccount }: { onCreateAccount: () => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-sage-200 bg-sage-50 px-4 py-2 text-sm text-ink-800">
+      <span className="min-w-0 flex-1">
+        You're exploring a demo with sample data. It's private to you and deleted after 24 hours.
+      </span>
+      <button onClick={onCreateAccount} className="font-medium text-sage-700 underline underline-offset-2">
+        Create your own account
+      </button>
     </div>
   );
 }

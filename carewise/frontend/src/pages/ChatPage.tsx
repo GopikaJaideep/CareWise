@@ -33,7 +33,8 @@ const SUGGESTIONS = [
 function friendlyError(err: unknown): string {
   if (err instanceof APIError) {
     if (err.status === 401) return "Your session has ended. Please sign in again.";
-    if (err.status === 429) return "CareWise is getting a lot of messages right now. Please wait a moment and try again.";
+    // 429 carries its reason (e.g. the demo's message limit); fall back to a general one.
+    if (err.status === 429) return err.message || "CareWise is getting a lot of messages right now. Please wait a moment and try again.";
     if (err.status < 500 && err.message) return err.message;
     return "CareWise had trouble replying. Your message is back in the box below, so you can try again.";
   }

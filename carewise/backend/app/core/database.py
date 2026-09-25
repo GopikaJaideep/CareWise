@@ -54,12 +54,24 @@ settings = get_settings()
 DATABASE_URL = normalize_database_url(settings.database_url)
 IS_SQLITE = DATABASE_URL.startswith("sqlite")
 
-engine = create_async_engine(
-    DATABASE_URL,
-    echo=settings.debug,
-    # Hosted Postgres drops idle connections; check before use instead of failing a request.
-    **({} if IS_SQLITE else {"pool_pre_ping": True}),
-)
+def engine_options(url: str) -> dict:
+    """Connection options for this database.
+
+    Hosted Postgres drops idle connections, so connections are checked before use. Behind a
+    transaction-mode connection pooler (PgBouncer: Neon's "-pooler" hosts, Supabase's port 6543),
+    asyncpg's prepared-statement caches break ("prepared statement ... already exists"), so both
+    asyncpg's and SQLAlchemy's are switched off there. A direct connection keeps them.
+    """
+    if url.startswith("sqlite"):
+        return {}
+    options: dict = {"pool_pre_ping": True}
+    parts = urlsplit(url)
+    if "-pooler" in (parts.hostname or "") or parts.port == 6543:
+        options["connect_args"] = {"statement_cache_size": 0, "prepared_statement_cache_size": 0}
+    return options
+
+
+engine = create_async_engine(DATABASE_URL, echo=settings.debug, **engine_options(DATABASE_URL))
 SessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 

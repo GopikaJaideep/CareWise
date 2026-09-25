@@ -69,6 +69,7 @@ export interface User {
   care_recipient_relation: string | null;
   diagnosis_context: string | null;
   email_verified: boolean;
+  is_demo: boolean;
 }
 
 export interface TokenResponse {
@@ -226,6 +227,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ email }),
     }),
+
+  startDemo: () => request<TokenResponse>("/auth/demo", { method: "POST" }),
 
   verifyEmail: (token: string) =>
     request<User>("/auth/verify-email", { method: "POST", body: JSON.stringify({ token }) }),

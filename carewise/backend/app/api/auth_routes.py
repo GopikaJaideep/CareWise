@@ -7,7 +7,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from email_validator import EmailNotValidError, validate_email
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +22,7 @@ from app.core.auth import (
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.models.db import PasswordResetToken, User
+from app.services import demo
 from app.services.email import send_password_reset_email, send_verification_email
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -106,6 +107,22 @@ async def login(payload: UserLogin, db: AsyncSession = Depends(get_db)) -> Token
         user_id=user.id,
         display_name=user.display_name,
     )
+
+
+@router.post("/demo", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
+async def start_demo(request: Request, db: AsyncSession = Depends(get_db)) -> TokenResponse:
+    """A private, pre-filled demo account: no sign-up, deleted after a day (app/services/demo.py)."""
+    # Behind Render's proxy the client address is the first X-Forwarded-For entry. It can be
+    # spoofed, so this limit is best-effort; the cap on live demos is the hard ceiling.
+    forwarded = request.headers.get("x-forwarded-for", "")
+    ip = forwarded.split(",")[0].strip() or (request.client.host if request.client else "unknown")
+    if not demo.allow_new_demo(ip):
+        raise HTTPException(status_code=429, detail="You've started several demos recently. Please use the one you have, or try again in an hour.")
+    try:
+        user = await demo.create_demo_user(db)
+    except demo.DemoUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    return TokenResponse(access_token=create_access_token(user.id), user_id=user.id, display_name=user.display_name)
 
 
 @router.post("/verify-email", response_model=UserOut)

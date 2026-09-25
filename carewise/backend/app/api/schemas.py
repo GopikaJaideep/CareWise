@@ -66,6 +66,7 @@ class UserOut(BaseModel):
     care_recipient_relation: str | None
     diagnosis_context: str | None
     email_verified: bool = False
+    is_demo: bool = False
 
     class Config:
         from_attributes = True

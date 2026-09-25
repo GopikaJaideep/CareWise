@@ -1,7 +1,10 @@
-import { Link } from "react-router-dom";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Heart, ShieldCheck, Activity, Calendar, BookOpen, Battery, ArrowRight, Lock, Stethoscope, Phone,
 } from "lucide-react";
+import { APIError } from "../lib/api";
+import { useAuth } from "../lib/auth";
 import { usePageTitle } from "../lib/usePageTitle";
 
 const STEPS = [
@@ -45,6 +48,19 @@ const FEATURES = [
 
 export function LandingPage() {
   usePageTitle("");
+  const { startDemo } = useAuth();
+  const navigate = useNavigate();
+  const [demoState, setDemoState] = useState<"idle" | "starting" | string>("idle");
+
+  const tryDemo = async () => {
+    setDemoState("starting");
+    try {
+      await startDemo();
+      navigate("/app");
+    } catch (err) {
+      setDemoState(err instanceof APIError ? err.message : "Couldn't start the demo. Please try again.");
+    }
+  };
 
   return (
     <div className="min-h-screen bg-sand-50">
@@ -93,10 +109,17 @@ export function LandingPage() {
                 Create a free account
                 <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" aria-hidden="true" />
               </Link>
-              <a href="#how-it-works" className="btn-ghost">
-                See how it works
-              </a>
+              <button
+                onClick={tryDemo}
+                disabled={demoState === "starting"}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-sage-300 bg-white/70 px-6 py-3 text-base font-medium text-sage-700 transition-colors hover:bg-white sm:w-auto"
+              >
+                {demoState === "starting" ? "Opening the demo…" : "Try it without signing up"}
+              </button>
             </div>
+            {demoState !== "idle" && demoState !== "starting" && (
+              <p role="alert" className="mt-3 text-sm text-clay-500">{demoState}</p>
+            )}
 
             <p className="mt-5 text-sm text-ink-600">
               Free · About a minute to set up · Not a substitute for medical care
