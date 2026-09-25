@@ -26,7 +26,9 @@ class SafetyAgent(BaseAgent):
         # Default to AU resources; in production, this would use user profile
         region = ctx.user_profile.get("region", "AU")
         risk = ctx.metadata.get("risk") or {}
-        someone_else = not check.requires_intervention and risk.get("who") in ("care_recipient", "other")
+        someone_else = (
+            check.someone_else if check.requires_intervention else risk.get("who") in ("care_recipient", "other")
+        )
         content = (
             _format_third_party_crisis_response(region=region) if someone_else else _format_crisis_response(region=region)
         )

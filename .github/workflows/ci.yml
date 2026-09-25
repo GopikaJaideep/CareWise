@@ -47,8 +47,8 @@ jobs:
             echo '<details><summary>Offline eval report</summary>'
             echo
             python -m evals.run --suite crisis,retrieval --no-write \
-              --fail-under crisis.recall=0.5 \
-              --fail-under crisis.precision=0.85 \
+              --fail-under crisis.recall=0.85 \
+              --fail-under crisis.precision=0.9 \
               --fail-under retrieval.keyword.recall_at_k=0.86 \
               --fail-under retrieval.keyword.correctly_refused=0.9
             echo '</details>'
