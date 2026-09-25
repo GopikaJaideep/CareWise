@@ -4,6 +4,7 @@
     python -m evals.run --suite routing,tasks --limit 10
     python -m evals.run --delay 4             # space out calls for the Gemini free tier
     python -m evals.run --suite crisis --fail-under crisis.recall=0.5   # CI regression gate
+    python -m evals.run --resume --delay 4    # spread a run over several days of free-tier quota
 
 Suites that need a model (routing, symptoms, tasks) run when GEMINI_API_KEY or
 ANTHROPIC_API_KEY is set; without one they are skipped, not faked. The crisis suite scores
@@ -32,6 +33,7 @@ from app.core.safety import detect_crisis
 from app.core.tracing import start_trace
 from app.services.llm import LLMClient, get_llm_client
 from app.services.retrieval import GeminiEmbedder, Retriever, load_corpus
+from evals.cache import CachingLLMClient
 from evals.metrics import (
     binary_report, classification_report, extraction_summary, percentile, retrieval_report,
     score_medications, score_symptoms, score_tasks,
@@ -64,7 +66,10 @@ class Timer:
     """Times each case and notices when its model call failed (quota, 5xx, blocked reply).
 
     Failed calls come back as a friendly error string or {}, which would otherwise be scored as a
-    wrong answer; instead those cases are excluded from scoring and counted as errors."""
+    wrong answer; instead those cases are excluded from scoring and counted as errors.
+
+    A case that made model calls is timed by those calls' own latency, so answers replayed by
+    --resume report the model's time, not the cache's."""
 
     def __init__(self) -> None:
         self.samples: list[float] = []
@@ -77,7 +82,8 @@ class Timer:
             try:
                 return await coro
             finally:
-                self.samples.append(time.perf_counter() - start)
+                elapsed = time.perf_counter() - start
+                self.samples.append(sum(c.latency_ms for c in trace.calls) / 1000 if trace.calls else elapsed)
                 self.last_failed = any(not call.ok for call in trace.calls)
                 if self.last_failed:
                     self.errors.append(case_id)
@@ -278,7 +284,10 @@ def pct(x: float | None) -> str:
 
 
 def render_markdown(meta: dict, results: dict[str, dict]) -> str:
-    lines = [f"# CareWise eval report", "", f"- Run: {meta['run_at']}", f"- Model: {meta['model']}", ""]
+    lines = [f"# CareWise eval report", "", f"- Run: {meta['run_at']}", f"- Model: {meta['model']}"]
+    if meta.get("resumed"):
+        lines.append(f"- Resumed: {meta['resumed']}")
+    lines.append("")
     if "crisis" in results:
         r = results["crisis"]["report"]
         lines += [
@@ -360,6 +369,11 @@ async def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--model", help="override the model name")
     parser.add_argument("--no-write", action="store_true", help="print only; don't write report files")
     parser.add_argument(
+        "--resume", action="store_true",
+        help="save each successful model answer to evals/.cache/ and replay saved ones, so a run "
+             "stopped by a daily quota continues where it left off (see evals/cache.py)",
+    )
+    parser.add_argument(
         "--fail-under", action="append", default=[], metavar="SUITE.METRIC=MIN",
         help="exit non-zero if a metric is below MIN, e.g. crisis.recall=0.5 or "
              "retrieval.keyword.recall_at_k=0.86 (repeatable; used as a CI regression gate)",
@@ -385,6 +399,9 @@ async def main(argv: list[str] | None = None) -> int:
             parser.error(f"no API key configured for {provider}")
         llm = LLMClient(provider=provider, api_key=key, model=args.model)
     has_model = llm.provider is not None
+    if args.resume and has_model:
+        llm = CachingLLMClient(llm)
+        print(f"resuming: {len(llm.entries)} saved answers in {llm.path}", file=sys.stderr)
     run_now = [s for s in wanted if has_model or s not in NEEDS_MODEL]
     skipped = [s for s in wanted if s not in run_now]
 
@@ -403,8 +420,16 @@ async def main(argv: list[str] | None = None) -> int:
                 "Check the warnings above, then re-run later or with --delay.",
                 file=sys.stderr,
             )
+            if isinstance(llm, CachingLLMClient):
+                print(
+                    f"Progress saved: {len(llm.entries)} answers in {llm.path} ({llm.misses} calls tried this "
+                    "run). Run the same command again once the quota resets to continue.",
+                    file=sys.stderr,
+                )
             return 2
 
+    if isinstance(llm, CachingLLMClient):
+        meta["resumed"] = f"{llm.hits} answers replayed from earlier runs, {llm.misses} new calls"
     markdown = render_markdown(meta, results)
     print(markdown)
     if not args.no_write:
