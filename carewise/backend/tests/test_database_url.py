@@ -97,3 +97,16 @@ async def test_uptime_monitors_can_check_health_with_head():
         for path in ("/health", "/"):
             assert (await c.head(path)).status_code == 200
             assert (await c.get(path)).status_code == 200
+
+
+async def test_responses_say_how_long_the_server_took_and_health_can_time_the_database(db):
+    import httpx
+
+    from app.main import app
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        plain = await c.get("/health")
+        assert plain.headers["server-timing"].startswith("app;dur=")
+        assert "db_query_ms" not in plain.json()  # monitors mustn't keep the database awake
+        timed = (await c.get("/health?db=true")).json()
+        assert len(timed["db_query_ms"]) == 3
