@@ -85,3 +85,15 @@ def test_cors_origins_ignore_a_trailing_slash_and_spaces():
 
     s = Settings(cors_origins=" https://carewise-aibuddy.vercel.app/ ,http://localhost:5173,, ")
     assert s.cors_origins_list == ["https://carewise-aibuddy.vercel.app", "http://localhost:5173"]
+
+
+async def test_uptime_monitors_can_check_health_with_head():
+    # Found in the Render logs: UptimeRobot's HEAD /health got 405, so the site would show as down.
+    import httpx
+
+    from app.main import app
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
+        for path in ("/health", "/"):
+            assert (await c.head(path)).status_code == 200
+            assert (await c.get(path)).status_code == 200

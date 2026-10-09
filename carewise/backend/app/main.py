@@ -55,7 +55,9 @@ app.include_router(tracking_routes.router)
 app.include_router(memory_routes.router)
 
 
-@app.get("/")
+# HEAD too: uptime monitors (UptimeRobot and others) check with HEAD by default, and a 405 there
+# would report the site as down.
+@app.api_route("/", methods=["GET", "HEAD"])
 async def root():
     return {
         "app": settings.app_name,
@@ -65,7 +67,7 @@ async def root():
     }
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health():
     """Also says where data lives, so a deploy can be checked from a browser. Never credentials.
 
