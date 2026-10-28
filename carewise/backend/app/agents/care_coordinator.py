@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.scheduler import note_task_due
 from app.agents.base import AgentName, AgentResponse, BaseAgent, SessionContext
 from app.agents.outputs import TaskExtraction
 from app.core.tz import parse_due_at, resolve_timezone, to_local, tz_label
@@ -84,6 +85,7 @@ class CareCoordinatorAgent(BaseAgent):
         extraction = await self.extract(ctx.user_message, tz)
 
         added = []
+        new_tasks: list[CareTask] = []
         for t in extraction.get("tasks", []) or []:
             if not t.get("title"):
                 continue
@@ -98,6 +100,7 @@ class CareCoordinatorAgent(BaseAgent):
             )
             self.db.add(task)
             added.append(t["title"])
+            new_tasks.append(task)
 
         # Mark done
         marked = []
@@ -118,6 +121,8 @@ class CareCoordinatorAgent(BaseAgent):
                 marked.append(task.title)
 
         await self.db.commit()
+        for task in new_tasks:  # a reminder due before the next hourly plan still fires
+            note_task_due(task.id, task.due_at)
 
         # Handle queries
         query = extraction.get("query")

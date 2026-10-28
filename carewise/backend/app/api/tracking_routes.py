@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.scheduler import note_task_due
 from app.agents.burnout_monitor import categorise, record_checkin
 from app.api.schemas import (
     BurnoutCheckinCreate, BurnoutCheckinOut, BurnoutCheckinResult, CareTaskCreate, CareTaskOut, DashboardSummary,
@@ -139,6 +140,7 @@ async def create_task(
     db.add(task)
     await db.commit()
     await db.refresh(task)
+    note_task_due(task.id, task.due_at)
     return task
 
 
