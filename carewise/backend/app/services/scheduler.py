@@ -1,9 +1,15 @@
-"""Background jobs: morning motivational pushes, and 5-min-before task reminders.
+"""Background jobs: morning motivational pushes, 5-min-before task reminders, demo clean-up.
 
-Runs in-process via APScheduler, started from the FastAPI lifespan. This only
-fires while the app instance is awake — on a host that spins down when idle
-(e.g. a free-tier dyno), a reminder due while the instance is asleep will be
-missed rather than queued, since there is no separate always-on worker here.
+Runs in-process via APScheduler, started from the FastAPI lifespan. This only fires while the
+app instance is awake: on a host that spins down when idle, a reminder due while it sleeps is
+missed rather than queued, since there is no separate always-on worker.
+
+Built to leave the database idle. Serverless Postgres (Neon's free tier) pauses after a few idle
+minutes and bills compute while awake, and a job that queried every minute kept it awake around
+the clock and used up the month's free compute in a few weeks. Instead, the database is read
+about once an hour: an hourly plan schedules an exact timer for each reminder due before the
+next plan, and a task saved in between gets its timer straight away (note_task_due), with no
+query. A timer reads the database only when there is a reminder to send.
 """
 from __future__ import annotations
 
@@ -12,6 +18,7 @@ from datetime import date, datetime, timedelta, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import or_, select
 
@@ -61,37 +68,76 @@ async def _send_morning_reminders() -> None:
     logger.info("Sent morning reminders to %s user(s).", len(by_user))
 
 
-async def _send_task_reminders() -> None:
-    now = datetime.now(timezone.utc)
-    window_start = now + timedelta(minutes=4)
-    window_end = now + timedelta(minutes=6)
+PLAN_EVERY = timedelta(hours=1)
+# Plan a little past the next plan, so a reminder due just after it isn't missed.
+PLAN_AHEAD = PLAN_EVERY + timedelta(minutes=10)
+REMIND_BEFORE = timedelta(minutes=5)
 
+
+def _schedule_reminder(task_id: int, due_at: datetime, now: datetime | None = None) -> bool:
+    """Set (or move) the timer for one task's reminder. No database access."""
+    if _scheduler is None:
+        return False
+    now = now or datetime.now(timezone.utc)
+    if due_at.tzinfo is None:  # SQLite returns naive datetimes; they are stored as UTC
+        due_at = due_at.replace(tzinfo=timezone.utc)
+    if not (now < due_at <= now + PLAN_AHEAD):
+        return False
+    _scheduler.add_job(
+        _send_task_reminder,
+        DateTrigger(run_date=max(due_at - REMIND_BEFORE, now)),  # due in under 5 minutes: remind now
+        args=[task_id],
+        id=f"task_reminder_{task_id}",
+        replace_existing=True,
+        misfire_grace_time=300,
+    )
+    return True
+
+
+def note_task_due(task_id: int, due_at: datetime | None) -> None:
+    """Call after saving a task with a due time, so a reminder due before the next hourly plan
+    still fires. Cheap and safe to call for any task."""
+    if due_at is not None:
+        _schedule_reminder(task_id, due_at)
+
+
+async def _plan_reminders() -> int:
+    now = datetime.now(timezone.utc)
     async with SessionLocal() as db:
         result = await db.execute(
-            select(CareTask).where(
+            select(CareTask.id, CareTask.due_at).where(
                 CareTask.completed.is_(False),
                 CareTask.reminded_at.is_(None),
                 CareTask.due_at.is_not(None),
-                CareTask.due_at >= window_start,
-                CareTask.due_at <= window_end,
+                CareTask.due_at > now,
+                CareTask.due_at <= now + PLAN_AHEAD,
             )
         )
-        tasks = list(result.scalars())
-        if not tasks:
+        planned = sum(_schedule_reminder(task_id, due_at, now) for task_id, due_at in result.all())
+    if planned:
+        logger.info("Planned %s task reminder(s).", planned)
+    return planned
+
+
+async def _send_task_reminder(task_id: int) -> None:
+    async with SessionLocal() as db:
+        task = await db.get(CareTask, task_id)
+        if task is None or task.completed or task.reminded_at is not None or task.due_at is None:
             return
-
-        for task in tasks:
-            quote = random_quote()
-            await send_push_to_user(
-                db, task.user_id,
-                title="Coming up in 5 minutes",
-                body=f"{task.title}\n\n{quote}",
-                tag=f"carewise-task-{task.id}",
-            )
-            task.reminded_at = now
+        due = task.due_at if task.due_at.tzinfo else task.due_at.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        if due - now > REMIND_BEFORE + timedelta(minutes=1):
+            # The due time moved later since this timer was set; the next plan picks it up.
+            return
+        await send_push_to_user(
+            db, task.user_id,
+            title="Coming up in 5 minutes",
+            body=f"{task.title}\n\n{random_quote()}",
+            tag=f"carewise-task-{task.id}",
+        )
+        task.reminded_at = now
         await db.commit()
-
-    logger.info("Sent %s task reminder(s).", len(tasks))
+    logger.info("Sent a task reminder.")
 
 
 async def _purge_demos() -> None:
@@ -102,6 +148,12 @@ async def _purge_demos() -> None:
         removed = await purge_expired_demos(db)
     if removed:
         logger.info("Deleted %d expired demo accounts", removed)
+
+
+async def _hourly() -> None:
+    """The one regular database visit: plan the next hour's reminders and clear old demos."""
+    await _plan_reminders()
+    await _purge_demos()
 
 
 def start_scheduler() -> AsyncIOScheduler:
@@ -117,19 +169,14 @@ def start_scheduler() -> AsyncIOScheduler:
         replace_existing=True,
     )
     scheduler.add_job(
-        _send_task_reminders,
-        IntervalTrigger(minutes=1),
-        id="task_reminders",
-        replace_existing=True,
-    )
-    scheduler.add_job(
-        _purge_demos,
+        _hourly,
         IntervalTrigger(hours=1),
-        id="purge_demos",
+        id="hourly",
         replace_existing=True,
+        next_run_time=datetime.now(timezone.utc) + timedelta(seconds=30),  # plan soon after start
     )
+    _scheduler = scheduler  # before start, so the first plan can add timers
     scheduler.start()
-    _scheduler = scheduler
     logger.info("Reminder scheduler started (morning hour UTC=%s).", settings.morning_reminder_hour_utc)
     return scheduler
 
