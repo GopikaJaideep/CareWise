@@ -1,0 +1,12 @@
+# gcloud run deploy --source uploads this folder; never send secrets or local state.
+.env
+.env.*
+*.db
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+evals/.cache/
+evals/results/
+.git/

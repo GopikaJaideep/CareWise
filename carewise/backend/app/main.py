@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import logging
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Header, HTTPException, Request
 from sqlalchemy import text
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -14,7 +15,7 @@ from app.api import auth_routes, chat_routes, memory_routes, tracking_routes
 from app.core.config import get_settings
 from app.core.database import IS_SQLITE, SessionLocal, init_db
 from app.services.retrieval import get_retriever
-from app.services.scheduler import start_scheduler, stop_scheduler
+from app.services.scheduler import run_job, start_scheduler, stop_scheduler
 
 logging.basicConfig(
     level=logging.INFO,
@@ -78,6 +79,21 @@ async def root():
         "status": "ok",
         "docs": "/docs",
     }
+
+
+@app.post("/internal/cron/{job}", include_in_schema=False)
+async def cron(job: str, x_cron_secret: str = Header(default="")):
+    """Run a background job when an external scheduler (Cloud Scheduler) asks, for hosts that stop
+    the app between requests. Off unless CRON_SECRET is set; the caller must send it."""
+    if not settings.cron_secret:
+        raise HTTPException(status_code=404)
+    if not hmac.compare_digest(x_cron_secret.encode(), settings.cron_secret.encode()):
+        raise HTTPException(status_code=403)
+    try:
+        await run_job(job)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Unknown job")
+    return {"ran": job}
 
 
 @app.api_route("/health", methods=["GET", "HEAD"])

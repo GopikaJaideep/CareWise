@@ -168,6 +168,61 @@ class GeminiEmbedder:
         return vectors
 
 
+class VertexEmbedder:
+    """The same embedding model through Vertex AI (see app/services/vertex.py).
+
+    Vertex takes one text per gemini-embedding-001 request, so texts are sent a few at a time in
+    parallel. Vectors match the Gemini API's for the same model, so the relevance cutoffs tuned
+    on it still apply.
+    """
+
+    RETRYABLE = {429, 500, 503}
+    ATTEMPTS = 4
+    PARALLEL = 5
+
+    def __init__(self, project: str, location: str, model: str, transport: httpx.AsyncBaseTransport | None = None) -> None:
+        self.project = project
+        self.location = location
+        self.model = model
+        self.transport = transport  # tests pass a mock transport
+
+    async def embed(self, texts: list[str], *, is_query: bool) -> list[list[float]]:
+        from app.services import vertex
+
+        task = "RETRIEVAL_QUERY" if is_query else "RETRIEVAL_DOCUMENT"
+        url = vertex.model_url(self.project, self.location, self.model, "predict")
+        gate = asyncio.Semaphore(self.PARALLEL)
+
+        async with httpx.AsyncClient(timeout=30.0, transport=self.transport) as client:
+            async def one(text: str) -> list[float]:
+                async with gate:
+                    for attempt in range(1, self.ATTEMPTS + 1):
+                        headers = await vertex.get_auth().headers()
+                        response = await client.post(
+                            url, headers=headers, json={"instances": [{"content": text, "task_type": task}]},
+                        )
+                        # As with the Gemini API: the background warm-up backs off and retries; a
+                        # user's query doesn't wait, and the caller falls back to keywords.
+                        if response.status_code in self.RETRYABLE and not is_query and attempt < self.ATTEMPTS:
+                            await asyncio.sleep(2 * attempt)
+                            continue
+                        break
+                    response.raise_for_status()
+                    return response.json()["predictions"][0]["embeddings"]["values"]
+
+            return list(await asyncio.gather(*(one(t) for t in texts)))
+
+
+def make_embedder(settings) -> Embedder | None:
+    """Vertex AI when LLM_PROVIDER=vertex, else the Gemini API when there's a key, else none
+    (keyword search only)."""
+    if settings.llm_provider.lower() == "vertex" and settings.google_cloud_project:
+        return VertexEmbedder(settings.google_cloud_project, settings.vertex_location, settings.embedding_model)
+    if settings.gemini_api_key:
+        return GeminiEmbedder(settings.gemini_api_key, settings.embedding_model)
+    return None
+
+
 def cosine(a: list[float], b: list[float]) -> float:
     dot = sum(x * y for x, y in zip(a, b))
     na = math.sqrt(sum(x * x for x in a))
@@ -302,7 +357,7 @@ def get_retriever() -> Retriever:
     global _retriever
     if _retriever is None:
         settings = get_settings()
-        embedder = GeminiEmbedder(settings.gemini_api_key, settings.embedding_model) if settings.gemini_api_key else None
+        embedder = make_embedder(settings)
         _retriever = Retriever(load_corpus(), embedder=embedder, cache=DatabaseEmbeddingCache() if embedder else None)
         logger.info("Knowledge base: %d sections, %s search", len(_retriever.chunks),
                     "hybrid" if embedder else "keyword")

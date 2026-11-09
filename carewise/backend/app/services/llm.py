@@ -1,4 +1,4 @@
-"""LLM client wrapper: Gemini (free tier) or Anthropic, with a demo-mode fallback."""
+"""LLM client wrapper: Gemini (via an AI Studio key or Vertex AI) or Anthropic, with a demo-mode fallback."""
 from __future__ import annotations
 
 import asyncio
@@ -15,6 +15,7 @@ from anthropic import AsyncAnthropic, APIError
 from app.core.config import get_settings
 from app.core.streaming import ReplySink, current_sink
 from app.core.tracing import record_call
+from app.services import vertex
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -91,7 +92,13 @@ def parse_gemini_text(data: dict[str, Any]) -> str | None:
 
 
 class LLMClient:
-    """Thin wrapper over Gemini or Anthropic with CareWise defaults."""
+    """Thin wrapper over Gemini or Anthropic with CareWise defaults.
+
+    Gemini is reached one of two ways with identical requests and replies: an AI Studio API key,
+    or Vertex AI on Google Cloud (LLM_PROVIDER=vertex, see app/services/vertex.py). Either way
+    self.provider is "gemini", so every Gemini code path (thinking budget, JSON mode, streaming)
+    applies to both; self.vertex only changes the address and the sign-in.
+    """
 
     def __init__(
         self,
@@ -99,8 +106,18 @@ class LLMClient:
         api_key: str | None = None,
         model: str | None = None,
     ) -> None:
-        if provider and api_key:
-            self.provider: str | None = provider
+        self.vertex = False
+        if provider == "vertex" or (provider is None and settings.llm_provider.lower() == "vertex"):
+            if settings.google_cloud_project:
+                self.provider: str | None = "gemini"
+                self.api_key = ""
+                self.vertex = True
+            else:
+                logger.warning("LLM_PROVIDER=vertex needs GOOGLE_CLOUD_PROJECT; running in demo mode.")
+                self.provider = None
+                self.api_key = ""
+        elif provider and api_key:
+            self.provider = provider
             self.api_key = api_key
         else:
             self.provider = resolve_provider(
@@ -119,7 +136,7 @@ class LLMClient:
         if self.provider is None:
             logger.warning("No LLM API key configured — running in demo mode.")
         else:
-            logger.info("LLM provider: %s (model=%s)", self.provider, self.model)
+            logger.info("LLM provider: %s (model=%s)", "vertex" if self.vertex else self.provider, self.model)
 
     async def complete(
         self,
@@ -261,11 +278,9 @@ class LLMClient:
         self, system: str, messages: list[dict[str, str]], max_tokens: int, temperature: float
     ) -> AsyncIterator[tuple[str, dict[str, Any] | None]]:
         payload = build_gemini_payload(system, messages, max_tokens, temperature, False, self.model)
+        url, headers = await self._gemini_target(stream=True)
         async with httpx.AsyncClient(timeout=60.0) as client:
-            async with client.stream(
-                "POST", GEMINI_STREAM_URL.format(model=self.model), json=payload,
-                headers={"x-goog-api-key": self.api_key},
-            ) as response:
+            async with client.stream("POST", url, json=payload, headers=headers) as response:
                 response.raise_for_status()
                 async for line in response.aiter_lines():
                     if not line.startswith("data:"):
@@ -291,10 +306,22 @@ class LLMClient:
             final = await stream.get_final_message()
             yield "", {"input_tokens": final.usage.input_tokens, "output_tokens": final.usage.output_tokens}
 
+    async def _gemini_target(self, *, stream: bool = False) -> tuple[str, dict[str, str]]:
+        """Where to send a Gemini request, and how to sign in."""
+        if not self.vertex:
+            url = (GEMINI_STREAM_URL if stream else GEMINI_URL).format(model=self.model)
+            # Key goes in a header, not the query string, so it can't leak via logged URLs.
+            return url, {"x-goog-api-key": self.api_key}
+        method = "streamGenerateContent?alt=sse" if stream else "generateContent"
+        url = vertex.model_url(settings.google_cloud_project, settings.vertex_location, self.model, method)
+        try:
+            headers = await vertex.get_auth().headers()
+        except Exception as e:  # noqa: BLE001 - missing or expired credentials: report as a failed call
+            raise httpx.RequestError(f"Vertex AI sign-in failed: {type(e).__name__}: {e}") from e
+        return url, headers
+
     async def _gemini_request(self, payload: dict[str, Any]) -> dict[str, Any]:
-        url = GEMINI_URL.format(model=self.model)
-        # Key goes in a header, not the query string, so it can't leak via logged URLs.
-        headers = {"x-goog-api-key": self.api_key}
+        url, headers = await self._gemini_target()
         async with httpx.AsyncClient(timeout=30.0) as client:
             for attempt in range(1, GEMINI_MAX_ATTEMPTS + 1):
                 response = await client.post(url, json=payload, headers=headers)

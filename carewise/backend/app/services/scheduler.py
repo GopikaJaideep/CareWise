@@ -10,6 +10,10 @@ the clock and used up the month's free compute in a few weeks. Instead, the data
 about once an hour: an hourly plan schedules an exact timer for each reminder due before the
 next plan, and a task saved in between gets its timer straight away (note_task_due), with no
 query. A timer reads the database only when there is a reminder to send.
+
+On Cloud Run (SCHEDULER_MODE=external) the app is stopped between requests, so nothing runs inside
+it: Cloud Scheduler calls /internal/cron/<job> instead (see run_job). Reminders are then checked
+every minute, which is fine there because Cloud SQL is always on and billed the same either way.
 """
 from __future__ import annotations
 
@@ -150,16 +154,58 @@ async def _purge_demos() -> None:
         logger.info("Deleted %d expired demo accounts", removed)
 
 
+async def send_due_reminders() -> int:
+    """For an external scheduler calling every minute: send reminders for tasks due within the next
+    REMIND_BEFORE (plus a minute's slack). Each is sent once (reminded_at)."""
+    now = datetime.now(timezone.utc)
+    async with SessionLocal() as db:
+        result = await db.execute(
+            select(CareTask.id).where(
+                CareTask.completed.is_(False),
+                CareTask.reminded_at.is_(None),
+                CareTask.due_at.is_not(None),
+                CareTask.due_at > now,
+                CareTask.due_at <= now + REMIND_BEFORE + timedelta(minutes=1),
+            )
+        )
+        due = list(result.scalars())
+    for task_id in due:
+        await _send_task_reminder(task_id)
+    return len(due)
+
+
+async def _warm_retriever() -> None:
+    """Embed the knowledge base if it isn't ready. On Cloud Run, work outside a request gets almost
+    no CPU, so the start-up warm-up may stall; running it inside a scheduled call finishes it."""
+    from app.services.retrieval import get_retriever
+
+    await get_retriever().prepare()
+
+
+async def run_job(name: str) -> None:
+    """The jobs an external scheduler can trigger. Raises KeyError for an unknown name."""
+    jobs = {
+        "reminders": send_due_reminders,
+        "hourly": _purge_demos,
+        "morning": _send_morning_reminders,
+        "warm": _warm_retriever,
+    }
+    await jobs[name]()
+
+
 async def _hourly() -> None:
     """The one regular database visit: plan the next hour's reminders and clear old demos."""
     await _plan_reminders()
     await _purge_demos()
 
 
-def start_scheduler() -> AsyncIOScheduler:
+def start_scheduler() -> AsyncIOScheduler | None:
     global _scheduler
     if _scheduler is not None:
         return _scheduler
+    if settings.scheduler_mode.lower() == "external":
+        logger.info("Scheduler: external (jobs run when /internal/cron/<job> is called).")
+        return None
 
     scheduler = AsyncIOScheduler(timezone=timezone.utc)
     scheduler.add_job(
