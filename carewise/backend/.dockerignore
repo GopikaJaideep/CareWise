@@ -1,0 +1,12 @@
+# Never send secrets or local state to a container build or to Google Cloud.
+.env
+.env.*
+*.db
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+evals/.cache/
+evals/results/
+.git/

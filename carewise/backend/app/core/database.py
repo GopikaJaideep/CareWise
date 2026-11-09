@@ -47,7 +47,9 @@ def describe_database(url: str) -> str:
     if url.startswith("sqlite"):
         return f"SQLite file {url.split(':///', 1)[-1]}"
     parts = urlsplit(url)
-    return f"Postgres at {parts.hostname}{parts.path}"
+    # Cloud SQL on Cloud Run connects through a socket: postgresql://user:pw@/db?host=/cloudsql/...
+    host = parts.hostname or dict(parse_qsl(parts.query)).get("host", "a local socket")
+    return f"Postgres at {host}{parts.path}"
 
 
 settings = get_settings()

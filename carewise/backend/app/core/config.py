@@ -13,8 +13,11 @@ class Settings(BaseSettings):
 
     # LLM
     # "auto" prefers Gemini (free tier) if GEMINI_API_KEY is set, then Anthropic,
-    # then falls back to demo mode. Set to "gemini" or "anthropic" to force one.
+    # then falls back to demo mode. Set to "gemini" or "anthropic" to force one, or "vertex" for
+    # Gemini through Vertex AI on Google Cloud (no key: Application Default Credentials).
     llm_provider: str = "auto"
+    google_cloud_project: str = ""
+    vertex_location: str = "global"
     anthropic_api_key: str = ""
     llm_model: str = "claude-sonnet-4-5-20250929"
     gemini_api_key: str = ""
@@ -58,6 +61,11 @@ class Settings(BaseSettings):
     vapid_public_key: str = ""
     vapid_claim_email: str = "mailto:admin@example.com"
     morning_reminder_hour_utc: int = 8
+    # "internal": jobs run inside the app (fine on an always-on server). "external": a scheduler
+    # outside the app (Cloud Scheduler) calls /internal/cron/..., for hosts like Cloud Run that
+    # stop the app between requests. Those calls must carry CRON_SECRET.
+    scheduler_mode: str = "internal"
+    cron_secret: str = ""
 
     # Safety
     crisis_keywords: str = (

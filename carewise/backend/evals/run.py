@@ -32,7 +32,7 @@ from app.core.risk import assess_risk
 from app.core.safety import detect_crisis
 from app.core.tracing import start_trace
 from app.services.llm import LLMClient, get_llm_client
-from app.services.retrieval import GeminiEmbedder, Retriever, load_corpus
+from app.services.retrieval import Retriever, load_corpus, make_embedder
 from evals.cache import CachingLLMClient
 from evals.metrics import (
     binary_report, classification_report, extraction_summary, percentile, retrieval_report,
@@ -245,8 +245,9 @@ async def run_retrieval(cases: list[dict], _llm, delay: float) -> dict[str, Any]
     settings = get_settings()
     chunks = load_corpus()
     modes = {"keyword": Retriever(chunks)}
-    if settings.gemini_api_key:
-        modes["hybrid"] = Retriever(chunks, embedder=GeminiEmbedder(settings.gemini_api_key, settings.embedding_model))
+    embedder = make_embedder(settings)
+    if embedder is not None:
+        modes["hybrid"] = Retriever(chunks, embedder=embedder)
     reports, all_rows = {}, {}
     for mode, retriever in modes.items():
         await retriever.prepare()  # what the app's startup warm-up does

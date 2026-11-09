@@ -82,9 +82,9 @@ flowchart TD
 
 ## Tech stack
 
-**Backend:** Python 3.12, FastAPI, SQLAlchemy 2 (async), Alembic, Pydantic 2, Gemini or Anthropic, Postgres (SQLite for local development), pytest.
+**Backend:** Python 3.12, FastAPI, SQLAlchemy 2 (async), Alembic, Pydantic 2, Gemini (through Vertex AI or an AI Studio key) or Anthropic, Postgres (SQLite for local development), pytest.
 **Frontend:** React 18, TypeScript, Vite, Tailwind CSS, Recharts, Web Speech API (voice input and read-aloud, in the browser).
-**Ops:** GitHub Actions (tests, eval gates, type-check and build), Render (backend), Vercel (frontend), Docker Compose for local full-stack.
+**Ops:** GitHub Actions (tests, eval gates, type-check and build), Google Cloud (Cloud Run, Cloud SQL, Vertex AI, Secret Manager, Cloud Scheduler) for the backend, Vercel (frontend), Docker Compose for local full-stack.
 
 ---
 
@@ -127,6 +127,12 @@ python -m evals.run --resume --delay 4   # continue a run across days of free-ti
 ---
 
 ## Deploying
+
+### Google Cloud (current)
+
+The live backend runs on **Cloud Run** in Sydney with **Cloud SQL** Postgres, **Vertex AI** for Gemini and embeddings (no API key and no daily cap: it signs in with the service account), Secret Manager, and Cloud Scheduler for reminders. One script sets it all up and redeploys: see [`carewise/deploy/gcp/README.md`](carewise/deploy/gcp/README.md), including moving data from another Postgres and rough costs.
+
+The sections below apply to any other host.
 
 ### Keep your data: use Postgres
 
